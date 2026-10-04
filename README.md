@@ -5,7 +5,7 @@ Mini project: phân loại bạch cầu cấp ALL/AML từ dữ liệu biểu hi
 
 ## Cài đặt
 ```bash
-git clone <link-repo>
+git clone https://github.com/BuiTuanHiep912/Golub-project.git
 cd golub-project
 conda env create -f environment.yml && conda activate golub
 # hoặc: python -m venv .venv && pip install -r requirements.txt
