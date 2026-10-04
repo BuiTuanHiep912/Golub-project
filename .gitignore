@@ -1,0 +1,21 @@
+# Dữ liệu: không đưa lên Git (tạo lại bằng `make data`), chỉ giữ SOURCES.md và cấu trúc thư mục
+data/**
+!data/**/
+!data/**/.gitkeep
+!data/raw/SOURCES.md
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Hệ điều hành / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

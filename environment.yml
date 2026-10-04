@@ -1,0 +1,22 @@
+name: golub
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pandas
+  - pyarrow
+  - numpy
+  - scipy
+  - statsmodels
+  - scikit-learn
+  - matplotlib
+  - seaborn
+  - umap-learn
+  - pyyaml
+  - jupyterlab
+  - pytest
+  - pip
+  - pip:
+      - minisom
+      - gseapy
+      - streamlit

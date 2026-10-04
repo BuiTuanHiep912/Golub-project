@@ -1,0 +1,10 @@
+# Cấu hình thí nghiệm giai thừa — bản nháp, TV1 hoàn thiện ở công việc 1.3
+selection:   [snr, ttest, lasso, enet, rf, svm_rfe]
+k:           [5, 10, 20, 50, 100, 200]
+classifiers: [golub_wv, dlda, knn, logreg_l1, logreg_l2, svm_linear, rf]
+cv:
+  outer_folds: 5
+  outer_repeats: 10
+  inner_folds: 5
+  stratified: true
+seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
