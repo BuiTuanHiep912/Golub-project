@@ -8,6 +8,7 @@ scikit-learn
 matplotlib
 seaborn
 umap-learn
+numba
 pyyaml
 jupyterlab
 pytest
