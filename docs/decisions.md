@@ -87,44 +87,6 @@ tái lập được và truy ngược về nguồn.
   (`original_split`); khi nhóm chốt mô hình cuối (TV3, công việc 2.3) thì gọi lại
   `plot_roc_cm` với dự đoán của mô hình đó — ghi chú này cũng nằm trong `notebooks/08_evaluation.ipynb`.
 
-## ADR-010 — Batch effect kiểm định trong từng lớp; không hiệu chỉnh batch (công việc 1.3)
-- **Ngày:** 25/10/2026 · **Người quyết định:** TV1
-- **Bối cảnh:** trong train, lớp ≡ tuổi ≡ nguồn (ALL = trẻ em = DFCI, AML = người lớn = CALGB;
-  chú thích 13, 23 của bài báo). Kruskal–Wallis theo source trên cả 72 mẫu (PC2 p = 7,7e-07,
-  PC3 p = 9,8e-06) lẫn với hiệu ứng lớp nên không dùng để kết luận H6.
-- **Quyết định:** kiểm định nguồn / loại mô / St-Jude vs còn lại **trong từng lớp** trên PC1–PC3
-  (Kruskal–Wallis, hiệu chỉnh BH, `results/metrics/batch_effect_tests.csv`). Kết quả 0/15 có ý
-  nghĩa → không thêm bước hiệu chỉnh batch (ComBat…) vào pipeline.
-- **Hệ quả:** báo cáo riêng kết quả test trên AML trẻ em (n = 10), St-Jude (n = 8), PB (n = 10);
-  `experiment_config.yaml` giữ nguyên giá trị, thêm chú thích và `tests/test_experiment_config.py`
-  (`outer_repeats` phải bằng số seed vì `evaluate.py` lặp theo `seeds`).
-
-## ADR-011 — Style guide và `src/viz.py` (công việc 1.4)
-- **Ngày:** 28/10/2026 · **Người quyết định:** TV6
-- **Quyết định:** màu/hình dạng/cỡ chữ nằm ở `src/viz.py` (nguồn duy nhất) và mô tả trong `docs/style_guide.md`. Báo cáo: chữ ≥ 10 pt, hình rộng 6,5 in, 300 dpi; slide: chữ ≥ 16 pt, 12 in, 150 dpi.
-  Phải vẽ ở **kích thước in thật** (hình 11 in thu về 6,5 in làm chữ 10 pt thành ~6 pt).
-- **Màu:** Okabe–Ito. ALL `#0072B2` tròn, AML `#E69F00` tam giác (đúng `src.config.PALETTE`); T-ALL `#332288` vuông; nguồn mẫu và loại mô giữ màu TV1 đã dùng ở F4d.
-- **Hình của 1.4:** F2, F2b, F3, F4a (scree), F4b (PCA theo lớp và nhóm con), F4c (PCA/t-SNE/UMAP), F4e (tương quan giữa mẫu). **F04d giữ nguyên là hình batch effect của TV1**; `viz.py` không vẽ lại F04d
-  và không vẽ PCA theo nguồn/loại mô (trùng việc 1.3).
-- **F2:** vẽ histogram đếm với trục y log trên giá trị MAS4 **gốc** (47% < 100, có số âm) cạnh giá trị sau threshold và log10; density thường bị cột ở sàn 100 chi phối nên không dùng.
-- **EDA dùng `X_log10_filtered`** (3 571 gen, lọc trên 72 mẫu, không dùng nhãn) và z-score từng gen; chỉ để khám phá, không để đánh giá mô hình (mục 2.6).
-- **Hệ quả:** F10/F11 (TV2) và F01/F04d (TV1) chưa theo style guide (màu, cỡ chữ, kích thước); chuyển sang `viz.py` ở công việc 2.6 (xem ADR-009).
-
-## ADR-012 — Sửa công việc 1.5: bảng chéo theo `sample_id`, SOM qua 10 seed, giữ average làm kết quả chính thức (công việc 1.5)
-- **Ngày:** 01/11/2026 · **Người quyết định:** TV1 (rà soát nghiệm thu cuối giai đoạn 1)
-- **Bối cảnh:** `notebooks/03_discovery.ipynb` bản 31/10 dựng bảng chéo từ `pd.Series(labels)` không có index trong
-  khi `samples` có index `sample_id` 1–72 → nhãn cụm lệch một mẫu, mất 1 mẫu; `cluster_discovery_metrics.csv` và
-  F05/F05b/F05c do script nháp `scripts/build_nb03.py` (đã xóa) sinh ra nên không tái lập được; báo cáo đọc nhầm
-  "24 of 25 samples" của bài báo thành "24/25 mẫu ALL".
-- **Quyết định:**
-  - Bảng chéo gắn nhãn cụm theo `sample_id` (hàm `bang_cheo`); notebook tự ghi CSV và cả ba hình (report + slide, theo `src/viz.py`).
-  - SOM (`minisom`, σ = 0.5, lr = 0.5, giữ nguyên tham số của TV5) báo cáo trung bình ± độ lệch chuẩn qua 10 seed;
-    **không** dò tham số SOM theo ARI vì như vậy là dùng nhãn để chọn mô hình không giám sát.
-  - Hierarchical: báo cáo **cả** average (kế hoạch chỉ định; ARI −0.013 do mẫu 21 thành cụm 1 mẫu) **và** complete
-    (ARI 0.690); không thay average bằng complete trong kết luận.
-  - Kết luận H5 đổi từ "ủng hộ mạnh" thành "ủng hộ ở mức ALL/AML, không ủng hộ ở mức B-ALL/T-ALL".
-- **Hệ quả:** xóa `F5_clustermap_{report,slide}.png` (bản trùng cũ của F05). Cập nhật `docs/report/3.2_class_discovery.md`, `docs/handover/1.5.md`.
-
 ## Nhật ký nhanh (mục 5.2 kế hoạch)
 
 | Ngày | Quyết định | Lý do | Người quyết định |
@@ -136,6 +98,3 @@ tái lập được và truy ngược về nguồn.
 | 06/10/2026 | Kiểm tra FAIL dừng pipeline; cố định phiên bản thư viện | ADR-006, ADR-007 | TV2 |
 | 06/10/2026 | `evaluate.py` bản 1: 4 sơ đồ, Wilson, McNemar, selection bias; thêm khóa `predictions` | ADR-008 | TV2 |
 | 07/10/2026 | `make evaluate` sinh thêm hình F10/F11 (bản 1) và `notebooks/08_evaluation.ipynb`; 100 lần hoán vị xác nhận H3 (CV đúng 0.50 vs CV sai 0.81) | ADR-009 | TV2 |
-| 25/10/2026 | 1.3: H6 kiểm định trong từng lớp (0/15 có ý nghĩa sau BH), không hiệu chỉnh batch; chú thích + test cho `experiment_config.yaml` | ADR-010 | TV1 |
-| 28/10/2026 | 1.4: `src/viz.py` (F2, F2b, F3, F4a–c, F4e), `style_guide.md`, `notebooks/01_eda.ipynb`, `tests/test_viz.py`; F04d giữ nguyên của TV1 | ADR-011 | TV6 |
-| 01/11/2026 | 1.5: sửa bảng chéo lệch `sample_id`, SOM qua 10 seed, notebook tự sinh CSV + F05/F05b/F05c; H5 chỉ ủng hộ ở mức ALL/AML | ADR-012 | TV1 |

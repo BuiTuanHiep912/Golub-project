@@ -21,4 +21,4 @@ figures:       ## vẽ lại toàn bộ F1–F12
 	$(PY) -m src.viz
 
 all: data experiments evaluate figures
-.PHONY: fetch standardize quality curate test data experiments evaluate figures all
+.PHONY: standardize quality curate test data experiments evaluate figures all

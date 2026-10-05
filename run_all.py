@@ -1,28 +1,12 @@
-"""Thay thế Makefile cho Windows. Cách dùng: python run_all.py [fetch|data|experiments|evaluate|figures|all] ...
-
-Có thể ghi nhiều bước liền nhau, ví dụ: python run_all.py fetch data
-"""
+"""Thay thế Makefile cho Windows. Cách dùng: python run_all.py [data|experiments|evaluate|figures|all]"""
 import subprocess, sys
 
 STEPS = {
-    "fetch": [
-        [sys.executable, "-m", "src.fetch"],
-    ],
-    "data": [
-        [sys.executable, "-m", "src.load"],
-        [sys.executable, "-m", "src.quality"],
-        [sys.executable, "-m", "src.preprocess"],
-        [sys.executable, "-m", "pytest", "tests/"],
-    ],
-    "experiments": [
-        [sys.executable, "-m", "src.models"],
-    ],
-    "evaluate": [
-        [sys.executable, "-m", "src.evaluate"],
-    ],
-    "figures": [
-        [sys.executable, "-m", "src.viz"],
-    ],
+    "data": [["python", "-m", "src.load"], ["python", "-m", "src.quality"],
+             ["python", "-m", "src.preprocess"], ["python", "-m", "pytest", "tests/"]],
+    "experiments": [["python", "-m", "src.models"]],
+    "evaluate": [["python", "-m", "src.evaluate"]],
+    "figures": [["python", "-m", "src.viz"]],
 }
 STEPS["all"] = STEPS["data"] + STEPS["experiments"] + STEPS["evaluate"] + STEPS["figures"]
 
