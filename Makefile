@@ -1,5 +1,5 @@
 # Chạy các bước của pipeline. Trên Windows có thể dùng: python run_all.py
-PY = python
+PY ?= python3
 
 standardize:   ## raw/ -> standardized/
 	$(PY) -m src.load

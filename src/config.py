@@ -1,21 +1,24 @@
 """
 TV2 - src/config.py (mục 2.2 kiến trúc lưu trữ theo tầng, Bảng 2.5/2.6).
 
-Trong repo group, module này là `src/config.py`. Khi làm việc ở thư mục TV2/code,
-các module chạy với bản local này (import `from config import ...`). Cách dùng chung:
+Gốc đường dẫn là thư mục repo `golub-project` (chứa src/, data/, results/, docs/).
+Cách dùng chung cho mọi module:
+
+    from src.config import DATA_DIR, RAW_DIR, STD_DIR, ...
+
+Khi chạy trực tiếp một module (`python src/load.py`) thì `src` chưa nằm trên
+sys.path, nên các module dùng try/except:
 
     try:
-        from src.config import DATA_DIR, RAW_DIR, STD_DIR, ...
+        from src.config import ...
     except ModuleNotFoundError:
-        from config import DATA_DIR, RAW_DIR, STD_DIR, ...
-
-Toàn bộ đường dẫn lấy gốc tại golub-project (đây là Golub_DeTai10/).
+        from config import ...
 """
 from __future__ import annotations
 
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]  # TV2/code -> Golub_DeTai10
+PROJECT_ROOT = Path(__file__).resolve().parents[1]  # src/ -> golub-project
 
 # Tầng dữ liệu (mục 2.2, Bảng 2.5)
 DATA_DIR = PROJECT_ROOT / "data"

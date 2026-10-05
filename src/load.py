@@ -7,7 +7,8 @@ Nguồn (data/raw/):
   - kaggle/data_set_ALL_AML_train.csv      : ma trận biểu hiện + call, patient 1..38
   - kaggle/data_set_ALL_AML_independent.csv: ma trận biểu hiện + call, patient 39..72
   - kaggle/actual.csv                      : nhãn ALL/AML (theo mã bệnh nhân) - NGUỒN NHÃN CHÍNH
-  - openintro/golub_metadata.csv           : metadata mẫu (xem docs/decisions.md ADR-001)
+  - openintro/golub.csv                    : metadata 6 cột mô tả (Samples, BM.PB, Gender,
+                                             Source, tissue.mf, cancer) - ADR-001
 
 Đầu ra data/standardized/:
   - expression.parquet : 72 x 7129, index = sample_id (int = mã bệnh nhân), cột = probe, int
@@ -19,6 +20,7 @@ Nguồn (data/raw/):
 from __future__ import annotations
 
 import hashlib
+import re
 
 import pandas as pd
 
@@ -35,8 +37,10 @@ KAGGLE_TRAIN = KAGGLE_DIR / "data_set_ALL_AML_train.csv"
 KAGGLE_INDEP = KAGGLE_DIR / "data_set_ALL_AML_independent.csv"
 ACTUAL_FILE = KAGGLE_DIR / "actual.csv"
 
-# 6 cột mô tả lấy từ metadata gốc (dataset_more.csv -> golub_metadata.csv)
-META_FILE = OPEN_INTRO_DIR / "golub_metadata.csv"
+# 6 cột mô tả lấy từ OpenIntro golub.csv (chỉ đọc 6 cột này, bỏ qua 7129 cột biểu hiện)
+META_COLS = ["Samples", "BM.PB", "Gender", "Source", "tissue.mf", "cancer"]
+# golub.csv là file chính của OpenIntro; golub_metadata.csv là bản sao 6 cột dùng dự phòng
+META_CANDIDATES = [OPEN_INTRO_DIR / "golub.csv", OPEN_INTRO_DIR / "golub_metadata.csv"]
 META_COL_RENAME = {
     "Samples": "sample_id",
     "BM.PB": "tissue",
@@ -64,32 +68,45 @@ def md5_file(path) -> str:
 
 
 def write_sources() -> None:
-    """Ghi data/raw/SOURCES.md kèm MD5 và nguồn tải từng file (mục 2.2, Bảng 2.5)."""
+    """Đối chiếu MD5 trong data/raw/SOURCES.md với file thật (mục 2.2, Bảng 2.5).
+
+    SOURCES.md do người tải ghi tay (ngày tải, người tải) nên hàm này KHÔNG ghi đè
+    file có sẵn: chỉ in bảng MD5 thực tế và cảnh báo nếu lệch với giá trị đã ghi.
+    Nếu chưa có SOURCES.md thì tạo mẫu để điền.
+    """
     sources = _source_notes()
+    actual: dict[str, str] = {}
     lines = ["# SOURCES.md - Nguồn dữ liệu và checksum", ""]
     for f in sorted(RAW_DIR.rglob("*")):
-        if f.is_file() and f.suffix in {".csv", ".txt", ".md"}:
+        if f.is_file() and f.suffix in {".csv", ".txt", ".md"} and f.name != "SOURCES.md":
             rel = f.relative_to(RAW_DIR)
-            note = sources.get(f.name, "")
-            lines.append(f"- `{rel}` MD5: `{md5_file(f)}`  {note}")
-    lines += [
-        "",
-        "## Quy ước",
-        "- Nhãn ALL/AML lấy theo `actual.csv` (Kaggle) - bộ dữ liệu chính (mục 2.1.2).",
-        "- Metadata mẫu lấy từ `golub_metadata.csv`, mapping theo ADR-001 (docs/decisions.md).",
-        "- Chi tiết từng cột: docs/data_dictionary.md; phân bố mẫu đối chiếu Golub 1999 Bảng 1.",
-        "- Bài báo gốc (PDF tham khảo): docs/nguon/Golub_1999_Molecular_Classification_of_Cancer.pdf"
-        " (MD5 1d65f9500df35892ce169297b5209c4b, ADR-005).",
-    ]
-    (RAW_DIR / "SOURCES.md").write_text("\n".join(lines), encoding="utf-8")
+            digest = md5_file(f)
+            actual[str(rel)] = digest
+            lines.append(f"- `{rel}` MD5: `{digest}`  {sources.get(f.name, '')}")
+
+    path = RAW_DIR / "SOURCES.md"
+    if path.exists():
+        recorded = {m for m in re.findall(r"\b[0-9a-f]{32}\b", path.read_text(encoding="utf-8"))}
+        drift = {k: v for k, v in actual.items() if v not in recorded}
+        if drift:
+            print("[WARN] MD5 trong SOURCES.md không khớp file hiện tại:")
+            for k, v in drift.items():
+                print(f"       {k}: file={v}")
+            print("       → cập nhật lại SOURCES.md (không tự ghi đè)")
+        else:
+            print(f"[OK] MD5 trong SOURCES.md khớp {len(actual)} file raw")
+    else:
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        print(f"Đã tạo mẫu: {path} (điền thêm ngày tải / người tải / nguồn)")
 
 
 def _source_notes() -> dict:
     return {
-        "data_set_ALL_AML_train.csv": "(Kaggle: Golub leukemia ALL_AML)",
-        "data_set_ALL_AML_independent.csv": "(Kaggle: Golub leukemia ALL_AML)",
-        "actual.csv": "(Kaggle, nhãn patient->cancer)",
-        "golub_metadata.csv": "(metadata mẫu, nguồn: dataset_more.csv - xem ADR-001)",
+        "data_set_ALL_AML_train.csv": "(Kaggle: Gene expression dataset (Golub et al.))",
+        "data_set_ALL_AML_independent.csv": "(Kaggle: như trên)",
+        "actual.csv": "(Kaggle: nhãn patient -> cancer)",
+        "golub.csv": "(OpenIntro: golub - 6 cột mô tả dùng cho metadata, ADR-001)",
+        "golub_metadata.csv": "(bản sao 6 cột mô tả, dự phòng)",
     }
 
 
@@ -160,13 +177,18 @@ def _load_labels() -> pd.Series:
 
 
 def _load_metadata() -> pd.DataFrame:
-    """Đọc metadata 6 cột mô tả + map subtype (bước 4). Không chấp nhận file thiếu."""
-    if not META_FILE.exists():
+    """Đọc 6 cột mô tả từ openintro/golub.csv và map subtype (bước 4).
+
+    golub.csv có 72 hàng × (6 cột mô tả + 7129 cột biểu hiện) nên chỉ đọc 6 cột cần
+    dùng. Thứ tự hàng trong file KHÔNG theo mã bệnh nhân → luôn ghép theo index.
+    """
+    meta_file = next((p for p in META_CANDIDATES if p.exists()), None)
+    if meta_file is None:
         raise FileNotFoundError(
-            f"Thiếu metadata {META_FILE} (nên là bản copy của dataset_more.csv). "
-            "Xem docs/decisions.md ADR-001."
+            f"Thiếu metadata OpenIntro: cần {META_CANDIDATES[0]} "
+            "(tải theo README mục 'Dữ liệu'; xem docs/decisions.md ADR-001)"
         )
-    meta = pd.read_csv(META_FILE).rename(columns=META_COL_RENAME)
+    meta = pd.read_csv(meta_file, usecols=META_COLS).rename(columns=META_COL_RENAME)
     missing = [c for c in META_COL_RENAME.values() if c not in meta.columns]
     if missing:
         raise ValueError(f"metadata thiếu cột: {missing}")
@@ -200,10 +222,9 @@ def build() -> pd.DataFrame:
     samples.index.name = "sample_id"
 
     # 6. Kiểm tra sau ghép (Bảng 2.4) - báo lỗi rõ để nhóm xử lý, không sửa tay
-    _assert_post_merge(None, samples)
+    _assert_post_merge(samples)
 
-    # Tách ma trận biểu hiện và ghi
-    # Ghi
+    # Kiểm tra bắt buộc trước khi ghi (Bảng 2.4)
     if X.shape != (72, 7129):
         raise ValueError(f"kích thước biểu hiện lệch: {X.shape}, kỳ vọng (72, 7129)")
     if X.isna().any().any():
@@ -223,7 +244,7 @@ def build() -> pd.DataFrame:
     return samples
 
 
-def _assert_post_merge(_unused, samples: pd.DataFrame) -> None:
+def _assert_post_merge(samples: pd.DataFrame) -> None:
     """Các kiểm tra Bắt buộc sau khi ghép → nếu lệch, in rõ và ghi decisions.md (2.1.2)."""
     checks = {
         "Số mẫu": len(samples) == 72,
