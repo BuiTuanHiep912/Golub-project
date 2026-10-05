@@ -4,6 +4,10 @@ data/**
 !data/**/.gitkeep
 !data/raw/SOURCES.md
 
+# Bản gốc tải về ngoài repo (đã copy vào data/raw/; không đưa lên Git)
+dataset/
+dataset_more.csv
+
 # Python
 __pycache__/
 *.pyc
