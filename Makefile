@@ -13,8 +13,10 @@ data: standardize quality curate test
 
 experiments:   ## chạy thí nghiệm giai thừa, ghi results/metrics/runs.parquet
 	$(PY) -m src.models
+evaluate:      ## 4 sơ đồ đánh giá + selection bias, ghi results/metrics/summary_*.csv (TV2, 2.4)
+	$(PY) -m src.evaluate
 figures:       ## vẽ lại toàn bộ F1–F12
 	$(PY) -m src.viz
 
-all: data experiments figures
-.PHONY: standardize quality curate test data experiments figures all
+all: data experiments evaluate figures
+.PHONY: standardize quality curate test data experiments evaluate figures all

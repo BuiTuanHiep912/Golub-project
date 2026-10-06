@@ -57,6 +57,23 @@ tái lập được và truy ngược về nguồn.
 - **Ghi chú:** `pyarrow` ghim 24.0.0 vì `streamlit 1.65.0` loại trừ đúng bản 25.0.0 và
   conda-forge chưa có 25.0.1; `gseapy` chỉ cài qua pip vì không có trên conda-forge.
 
+## ADR-008 — Quy ước của `src/evaluate.py` (công việc 2.4, bản 1)
+- **Ngày:** 06/10/2026 · **Người quyết định:** TV2
+- **Kết quả trả về:** đủ 5 khóa của demo nghiệm thu (`bal_acc_mean`, `bal_acc_sd`, `auc_mean`,
+  `per_fold`, `config`) và thêm `predictions` (dự đoán theo mẫu), vì McNemar, ROC (F11) và
+  phân tích lỗi của TV5 đều cần dự đoán từng mẫu.
+- **Trung bình ± SD:** tính qua các dòng `per_fold` (fold × seed), giống `cross_val_score` ở
+  mục 3.5.2. LOOCV gộp dự đoán của 38 fold rồi tính chỉ số một lần (fold 1 mẫu không có
+  balanced accuracy/AUC); original_split và LOOCV có SD = NaN khi chỉ có một seed.
+- **Seed và số fold** đọc từ `config/experiment_config.yaml`: mỗi seed là một lần lặp CV;
+  `random_state` của mọi bước trong pipeline được gán bằng seed để chạy lại ra đúng số.
+- **wrong_cv:** cắt pipeline tại bước tên `select` (hoặc bước chọn gen cuối cùng), fit phần
+  trước trên cả 72 mẫu rồi mới CV phần sau.
+- **Dự đoán "uncertain"** (weighted voting, PS < 0.3) tính là sai trong mọi chỉ số; số lượng
+  ghi ở cột `n_uncertain`.
+- **Tạm thời:** `python -m src.evaluate` dùng pipeline threshold+log10 → chuẩn hóa → 50 gen
+  → logistic trên tầng cleansed, vì tầng curated của TV3 chưa có (xem NOTICE trong code).
+
 ## Nhật ký nhanh (mục 5.2 kế hoạch)
 
 | Ngày | Quyết định | Lý do | Người quyết định |
@@ -66,3 +83,4 @@ tái lập được và truy ngược về nguồn.
 | 06/10/2026 | Viết lại kiểm tra chất lượng theo đúng 4 mức Bảng 2.9; mẫu 21 gắn cờ `qc_outlier` | ADR-004 | TV2 |
 | 06/10/2026 | Ghép theo left join vào bảng mẫu Kaggle, so tập `sample_id` của 3 nguồn trước khi ghép | Mục 2.1.2 bước 5–6 | TV2 |
 | 06/10/2026 | Kiểm tra FAIL dừng pipeline; cố định phiên bản thư viện | ADR-006, ADR-007 | TV2 |
+| 06/10/2026 | `evaluate.py` bản 1: 4 sơ đồ, Wilson, McNemar, selection bias; thêm khóa `predictions` | ADR-008 | TV2 |

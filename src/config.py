@@ -45,6 +45,7 @@ TESTS_DIR = PROJECT_ROOT / "tests"
 RANDOM_SEED = 42
 PS_THRESHOLD = 0.3                       # ngưỡng prediction strength (bài báo, note 21)
 POSITIVE_CLASS = "AML"                   # lớp dương khi tính sensitivity/specificity
+NEGATIVE_CLASS = "ALL"
 
 # Bảng màu ALL/AML (style guide, Bảng 4.1): an toàn với người mù màu
 PALETTE = {"ALL": "#0072B2", "AML": "#E69F00"}
@@ -56,9 +57,9 @@ VALID_TISSUE = {"BM", "PB"}
 VALID_SOURCE = {"DFCI", "CALGB", "CCG", "St-Jude"}
 VALID_SEX = {"M", "F"}  # NaN được phép (gender thiếu trong metadata gốc)
 
-# Khóa thí nghiệm (mục 3.5): giảm số lần lặp khi chạy thử
-N_PERMS_EVAL = 100       # số lần hoán vị selection bias
-CV_REPEATS = 10          # số lần lặp repeated stratified CV
+# Số lần hoán vị nhãn của thí nghiệm selection bias (mục 3.5.2). Số fold, số lần lặp CV và
+# seed KHÔNG khai ở đây mà đọc từ config/experiment_config.yaml (của TV1) để chỉ có một nguồn.
+N_PERMS_EVAL = 100
 
 
 def ensure_dirs() -> None:
