@@ -21,7 +21,8 @@ config/experiment_config.yaml.
 Chạy `python -m src.evaluate` (hay `make evaluate`) để đánh giá pipeline tạm (log10 → chuẩn hóa →
 50 gen → logistic) bằng cả 4 sơ đồ, kiểm định McNemar với baseline lớp đa số, và chạy thí
 nghiệm selection bias; ghi results/metrics/summary_evaluation.csv,
-summary_selection_bias.csv, selection_bias_runs.csv.
+summary_selection_bias.csv, selection_bias_runs.csv + hình F10 (selection bias) và
+F11 (ROC + ma trận nhầm lẫn) vào results/figures/report|slides/ (Bảng 2.9 của thuyết minh TV2).
 """
 from __future__ import annotations
 
@@ -30,12 +31,14 @@ import warnings
 
 import numpy as np
 import pandas as pd
+import seaborn as sns
 import yaml
+from matplotlib import pyplot as plt
 from sklearn.base import clone
 from sklearn.dummy import DummyClassifier
 from sklearn.feature_selection import SelectKBest, SelectorMixin, f_classif
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import roc_auc_score
+from sklearn.metrics import confusion_matrix, roc_auc_score, roc_curve
 from sklearn.model_selection import GridSearchCV, LeaveOneOut, StratifiedKFold
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import FunctionTransformer, StandardScaler
@@ -43,11 +46,19 @@ from statsmodels.stats.contingency_tables import mcnemar
 from statsmodels.stats.proportion import proportion_confint
 
 from src.config import (
-    CLEANSED_DIR, CONFIG_DIR, METRICS_DIR, N_PERMS_EVAL, NEGATIVE_CLASS, POSITIVE_CLASS, RANDOM_SEED,
+    CLEANSED_DIR, CONFIG_DIR, METRICS_DIR, N_PERMS_EVAL, NEGATIVE_CLASS, POSITIVE_CLASS,
+    RANDOM_SEED, REPORT_FIG_DIR, SLIDE_FIG_DIR,
 )
 from src.load import load_golub
 
 SCHEMES = ("original_split", "loocv", "nested_cv", "wrong_cv")
+
+# Hai "bản" của mỗi hình theo Bảng 2.9: report = nhỏ, chữ 9pt (in trong báo cáo);
+# slide = chữ lớn (thông số do TV6 chốt trong style_guide, sẽ thay bằng src/viz.py khi có).
+_FIG_STYLES = {
+    "report": dict(figsize=(7.2, 4.0), fontsize=9, dpi=220),
+    "slide": dict(figsize=(9.0, 5.2), fontsize=17, dpi=150),
+}
 
 
 # ---------------------------------------------------------------------------
@@ -333,6 +344,101 @@ def summarize_selection_bias(runs: pd.DataFrame) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
+# Hình F10, F11 (sản phẩm bàn giao 2.4; tên file theo thuyết minh TV2)
+# ---------------------------------------------------------------------------
+def _save_both(fig, name: str) -> list:
+    """Lưu một hình theo 2 bản: report (chữ nhỏ) và slide (chữ lớn)."""
+    paths = []
+    for style, out_dir in (("report", REPORT_FIG_DIR), ("slide", SLIDE_FIG_DIR)):
+        cfg = _FIG_STYLES[style]
+        out_dir.mkdir(parents=True, exist_ok=True)
+        fig.set_size_inches(cfg["figsize"])
+        for item in fig.get_axes():
+            if item is None:
+                continue
+            item.title.set_fontsize(cfg["fontsize"] + 2)
+            item.xaxis.label.set_fontsize(cfg["fontsize"])
+            item.yaxis.label.set_fontsize(cfg["fontsize"])
+            item.tick_params(labelsize=cfg["fontsize"])
+            for txt in item.texts:                    # nhãn in trực tiếp (vd. "0.50")
+                txt.set_fontsize(cfg["fontsize"])
+            if item.get_legend() is not None:
+                for txt in item.get_legend().get_texts():
+                    txt.set_fontsize(cfg["fontsize"])
+        if fig._suptitle is not None:
+            fig._suptitle.set_fontsize(cfg["fontsize"] + 4)
+        path = out_dir / f"{name}_{style}.png"
+        fig.savefig(path, dpi=cfg["dpi"], bbox_inches="tight")
+        paths.append(path)
+    plt.close(fig)
+    return paths
+
+
+def plot_selection_bias(runs: pd.DataFrame) -> list:
+    """Hình F10: phân phối balanced accuracy của 4 tổ hợp (nhãn × cách CV), đường 0.5.
+
+    Kỳ vọng (mục 3.5.2): nhãn thật thì cả hai cách đều cao; nhãn hoán vị thì CV đúng
+    quanh 0.50 còn CV sai cao bất thường — đó là bằng chứng H3 (selection bias).
+    """
+    order = [("real", "correct"), ("real", "wrong"), ("permuted", "correct"), ("permuted", "wrong")]
+    labels = ["Thật\nĐúng", "Thật\nSai", "Hoán vị\nĐúng", "Hoán vị\nSai"]
+    colors = {"correct": "#2b7bba", "wrong": "#c0392b"}
+
+    fig, ax = plt.subplots()
+    frame = runs.copy()
+    frame["combo"] = [f"{a}|{b}" for a, b in zip(frame["labels"], frame["cv"])]
+    combo_order = [f"{a}|{b}" for a, b in order]
+    sns.violinplot(data=frame, x="combo", y="bal_acc", order=combo_order,
+                   hue="combo", hue_order=combo_order, legend=False,
+                   inner=None, cut=0, linewidth=1.0, palette=[colors[c] for _, c in order],
+                   alpha=0.35, ax=ax)
+    rng = np.random.default_rng(RANDOM_SEED)
+    for i, key in enumerate(order):
+        vals = frame.loc[frame["combo"] == f"{key[0]}|{key[1]}", "bal_acc"].to_numpy()
+        ax.scatter(i + rng.uniform(-0.09, 0.09, len(vals)), vals, s=14, color=colors[key[1]],
+                   alpha=0.75, zorder=3, linewidths=0)
+    ax.axhline(0.5, color="0.35", linestyle="--", linewidth=1.2, zorder=2)
+    ax.text(len(order) - 0.45, 0.505, "0.50", color="0.35", fontsize=_FIG_STYLES["report"]["fontsize"])
+    ax.set_xticks(range(len(order)))
+    ax.set_xticklabels(labels)
+    ax.set_xlabel("Nhãn × cách cross-validation")
+    ax.set_ylabel("Balanced accuracy")
+    ax.set_title("Thí nghiệm selection bias (H3): 100 lần hoán vị nhãn × {CV đúng, CV sai}")
+    ax.set_ylim(max(0.3, float(frame["bal_acc"].min()) - 0.05), 1.05)
+    fig.tight_layout()
+    return _save_both(fig, "F10_selection_bias")
+
+
+def plot_roc_cm(y_true, y_pred, score, model_name: str = "baseline") -> list:
+    """Hình F11: đường ROC + ma trận nhầm lẫn của mô hình (AML là lớp dương).
+
+    Bản 1 vẽ cho pipeline tạm trên tập test 34 mẫu (original_split); khi nhóm chốt mô
+    hình cuối (TV3, công việc 2.3) thì gọi lại với dự đoán của mô hình đó.
+    """
+    t, p = _encode(y_true), _encode(y_pred)
+    fig, (ax1, ax2) = plt.subplots(1, 2)
+    fpr, tpr, _ = roc_curve(t, score)
+    auc = roc_auc_score(t, score)
+    ax1.plot(fpr, tpr, color="#2b7bba", linewidth=1.8, label=f"AUC = {auc:.3f}")
+    ax1.plot([0, 1], [0, 1], color="0.6", linestyle="--", linewidth=1.0, label="chance")
+    ax1.set_xlabel("False positive rate (1 − specificity)")
+    ax1.set_ylabel("True positive rate (sensitivity)")
+    ax1.set_title("ROC — AML là lớp dương")
+    ax1.legend(loc="lower right", fontsize=_FIG_STYLES["report"]["fontsize"])
+
+    cm = confusion_matrix(t, p, labels=[0, 1])
+    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", cbar=False, square=True,
+                xticklabels=["ALL (dự đoán)", "AML (dự đoán)"],
+                yticklabels=["ALL (thật)", "AML (thật)"], ax=ax2,
+                annot_kws={"fontsize": _FIG_STYLES["report"]["fontsize"] + 2})
+    ax2.set_title("Ma trận nhầm lẫn — tập test 34 mẫu")
+
+    fig.suptitle(f"Mô hình cuối ({model_name})", fontsize=_FIG_STYLES["report"]["fontsize"] + 3)
+    fig.tight_layout()
+    return _save_both(fig, "F11_final_model_roc_cm")
+
+
+# ---------------------------------------------------------------------------
 # Chạy trên dữ liệu thật: python -m src.evaluate
 # ---------------------------------------------------------------------------
 def _threshold_log10(X):
@@ -414,6 +520,11 @@ def main(argv=None) -> None:
     sb.to_csv(METRICS_DIR / "summary_selection_bias.csv", index=False)
     runs.to_csv(METRICS_DIR / "selection_bias_runs.csv", index=False)
     print(f"\nĐã ghi {METRICS_DIR}/summary_evaluation.csv, summary_selection_bias.csv, selection_bias_runs.csv")
+
+    figs = plot_selection_bias(runs)
+    figs += plot_roc_cm(test["predictions"]["y_true"], test["predictions"]["y_pred"],
+                        test["predictions"]["score"], model_name="LogReg 50 gen (pipeline tạm)")
+    print("Đã ghi hình F10/F11 (bản 1):\n  " + "\n  ".join(str(p) for p in figs))
 
 
 if __name__ == "__main__":

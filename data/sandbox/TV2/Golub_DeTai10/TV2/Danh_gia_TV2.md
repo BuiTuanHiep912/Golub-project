@@ -93,4 +93,64 @@ Tôi có thể sửa các lỗi code ở phần 2 trên một nhánh riêng, kè
 
 ## Phần II. Cập nhật sau khi sửa
 
-_Đang thực hiện trên nhánh `tv2-review-fixes`; mục này được cập nhật khi xong từng việc._
+_Cập nhật 07/10/2026. Phần I giữ nguyên làm bản đánh giá gốc tại commit `330ce48`._
+
+### 1. Các lỗi code ở Phần I, mục 2 — đã sửa hết (kiểm lại ngày 07/10)
+
+| # | Lỗi | Trạng thái | Bằng chứng |
+|---|---|---|---|
+| 1 | Gắn cờ `qc_outlier` theo vị trí thay vì `sample_id` | ✅ | `tests/test_quality.py::test_qc_outlier_flags_the_corrupted_sample_by_sample_id` tái hiện lỗi cũ và xác nhận cờ rơi đúng mẫu (gộp với lỗi 2 ở sửa đổi ADR-004) |
+| 2 | Z-score toàn ma trận → không bao giờ báo được | ✅ | `quality.py` đổi sang Bảng 2.9: tương quan giữa các mẫu + boxplot theo mẫu, modified z (median/MAD) ngưỡng 3.5; dữ liệu thật phát hiện mẫu 21 (r = 0.756, z = −4.7) |
+| 3 | Chưa đúng 4 mức Bảng 2.9; thiếu đếm trùng mô tả, thiếu `tissue.mf`, tên `morphology` sai nghĩa | ✅ | 4 mức `check_value/check_value_set/check_record/check_relation`; 926 probe thuộc 424 mô tả trùng; `tissue.mf` khớp `tissue`+`sex` 72/72 và chỉ dùng để kiểm tra chéo; cột đổi tên `tissue_mf` |
+| 4 | `load_golub` âm thầm trả nhầm tầng | ✅ | Bảng `LAYER_FILES` + `ValueError` cho tên tầng lạ; test `test_load_golub_rejects_unknown_layer` (3 tên sai) |
+| 5 | Thiếu kiểm tra sau ghép (bước 6) | ✅ | `_assert_same_ids` (so tập `sample_id` 3 nguồn) + `_assert_post_merge` (72 mẫu, đủ metadata, class↔subtype, tissue.mf) |
+| 6 | FAIL không chặn pipeline; chưa có dữ liệu thì test vẫn xanh | ✅ | `QualityCheckError` → không ghi + xóa tầng cleansed cũ + thoát mã 1 (`ADR-006`); fixture của `test_load.py` `pytest.fail` thay vì skip; test `test_failed_check_stops_pipeline_and_removes_stale_cleansed` |
+| 7 | `environment.yml` chưa ghim phiên bản | ✅ | Đã ghim `environment.yml` = `requirements.txt` (ADR-007); `make data` xanh trên Python 3.10 máy hiện tại |
+| 8 | `SOURCES.md` thiếu link Kaggle, ngày sai định dạng | ✅ | Đã có link `kaggle.com/datasets/crawford/gene-expression`, ngày `05/10/2026`, kèm lệnh tải lại + đối chiếu MD5 |
+
+### 2. Tài liệu ở Phần I, mục 3 — đã sửa (các commit `82dee9d`, `ef5206a`)
+
+- **Thuyết minh** (`Thuyet_minh_nhiem_vu_TV2.pdf`): sửa đường dẫn hình sang
+  `results/figures/report|slides/` với tên `F10_selection_bias_{report,slide}.png`,
+  `F11_final_model_roc_cm_{report,slide}.png`; câu "tầng cleansed sẵn sàng cho trích xuất đặc
+  trưng" → tầng sẵn sàng là `curated` (TV3); thêm bảng 2×2 selection bias; thêm các mốc giao
+  việc (11/10, 18/10, 01/11), chữ ký `evaluate(..., seeds=)`, 6 khoá trả về (kèm `predictions`),
+  phụ thuộc `experiment_config.yaml`.
+- **`Cong_viec_chi_tiet_TV2.md`**: Phần B bỏ số liệu tự mâu thuẫn, mô tả đúng 4 sơ đồ
+  (LOOCV gộp dự đoán, không `auc=nan`), thêm sensitivity/specificity + McNemar, bỏ đề xuất
+  `selection_bias.py`/`roc_cm.py` (nay nằm trong `evaluate.py` + notebook `08`), thêm
+  `make evaluate` vào Makefile; các số liệu Bảng 2×2 chạy lại khớp thật.
+- **`README_CODE_TV2.md`**: viết lại — bảng module giờ trỏ đúng `src/` + `tests/`, bỏ thông tin
+  `fetch_raw.py`/`dataset_more.csv` sai với ADR-001, không còn câu "golub.csv không tồn tại".
+- `docs/data_dictionary.md` không còn trỏ tới `docs/leakage_review.md` (file chưa tồn tại).
+
+### 3. Thứ tự làm ở Phần I, mục 4
+
+1. ✅ Trước 10/10: sửa 8 mục lỗi code + ghim phiên bản (xong 06/10, kiểm lại 07/10).
+2. ✅ Sửa 3 tài liệu theo Phần 3 (các commit `82dee9d`, `ef5206a`).
+3. ✅ Trước tuần 5: `src/evaluate.py` bản 1 đúng API kế hoạch — 4 sơ đồ, sensitivity/
+   specificity, Wilson, McNemar, selection bias 100 hoán vị; có `tests/test_evaluate.py`
+   (11 test, dữ liệu tổng hợp) chạy xanh.
+
+### 4. Việc làm thêm ngày 07/10/2026 (ngoài danh sách đánh giá, theo thuyết minh)
+
+- `make evaluate` chạy đủ 100 hoán vị, ghi `results/metrics/summary_evaluation.csv`,
+  `summary_selection_bias.csv`, `selection_bias_runs.csv`.
+- Thêm `plot_selection_bias()` + `plot_roc_cm()` vào `src/evaluate.py` → tự sinh 4 hình
+  `F10_selection_bias_{report,slide}.png`, `F11_final_model_roc_cm_{report,slide}.png`
+  (quyết định ADR-009; F11 bản 1 vẽ bằng pipeline tạm, chờ mô hình cuối của TV3).
+- Viết `notebooks/08_evaluation.ipynb` (15 cell) và chạy thật: 0 lỗi, 0 warning, 2 ảnh nhúng.
+- Soạn `docs/handover/1.1.md` (mốc CN 01/11).
+- `.gitignore` thêm `dataset/`, `dataset_more.csv`.
+
+### 5. Còn lại (chưa làm, có lý do khách quan)
+
+| Việc | Lý do |
+|---|---|
+| Mục 2.1–2.5, 2.7 và 3.5 của báo cáo (`docs/report/` đang trống) | Viết khi các GĐ khác giao số liệu cuối |
+| `docs/leakage_review.md` (review rò rỉ code TV1/TV3/TV4) | `golub_wv.py`, `preprocess.py`, `features.py`, `models.py` vẫn là `# TODO` — chưa có code để review |
+| F11 bản chính thức + làm lại kiểu dáng F10/F11 theo `viz.py` | Chờ mô hình cuối (TV3, 2.3) và style guide của TV6 (T4 14/10) — xem ADR-009 |
+| Test `tests/test_no_leakage.py` (đang 1 skipped) | Của TV3, công việc 1.2 |
+
+**Kết luận:** cả 8 lỗi code và các lỗi tài liệu nêu ở Phần I đã được sửa và kiểm chứng lại;
+phần còn lại phụ thuộc công việc của TV1/TV3/TV6 và nội dung báo cáo cuối kỳ.

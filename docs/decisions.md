@@ -74,6 +74,19 @@ tái lập được và truy ngược về nguồn.
 - **Tạm thời:** `python -m src.evaluate` dùng pipeline threshold+log10 → chuẩn hóa → 50 gen
   → logistic trên tầng cleansed, vì tầng curated của TV3 chưa có (xem NOTICE trong code).
 
+## ADR-009 — Hình F10/F11 vẽ từ `evaluate.py`, chưa chờ `viz.py` của TV6
+- **Ngày:** 07/10/2026 · **Người quyết định:** TV2
+- **Bối cảnh:** thuyết minh TV2 quy định TV2 bàn giao hình F10 (selection bias) và F11 (ROC +
+  ma trận nhầm lẫn) với tên file `F10_selection_bias_{report,slide}.png`,
+  `F11_final_model_roc_cm_{report,slide}.png`; kế hoạch lại giao `src/viz.py` cho TV6 (T4 14/10).
+- **Quyết định:** `src/evaluate.py` có `plot_selection_bias()` và `plot_roc_cm()`, chạy sau
+  `make evaluate`, ghi cả hai bản report (9pt, dpi 220) và slide (17pt, dpi 150) vào
+  `results/figures/report|slides/`. Khi TV6 giao `style_guide` + `viz.py` thì chuyển phần
+  kiểu dáng sang đó, giữ nguyên tên file và nơi sinh số liệu.
+- **F11 bản 1:** vẽ cho pipeline tạm (50 gen → logistic) trên tập test 34 mẫu
+  (`original_split`); khi nhóm chốt mô hình cuối (TV3, công việc 2.3) thì gọi lại
+  `plot_roc_cm` với dự đoán của mô hình đó — ghi chú này cũng nằm trong `notebooks/08_evaluation.ipynb`.
+
 ## Nhật ký nhanh (mục 5.2 kế hoạch)
 
 | Ngày | Quyết định | Lý do | Người quyết định |
@@ -84,3 +97,4 @@ tái lập được và truy ngược về nguồn.
 | 06/10/2026 | Ghép theo left join vào bảng mẫu Kaggle, so tập `sample_id` của 3 nguồn trước khi ghép | Mục 2.1.2 bước 5–6 | TV2 |
 | 06/10/2026 | Kiểm tra FAIL dừng pipeline; cố định phiên bản thư viện | ADR-006, ADR-007 | TV2 |
 | 06/10/2026 | `evaluate.py` bản 1: 4 sơ đồ, Wilson, McNemar, selection bias; thêm khóa `predictions` | ADR-008 | TV2 |
+| 07/10/2026 | `make evaluate` sinh thêm hình F10/F11 (bản 1) và `notebooks/08_evaluation.ipynb`; 100 lần hoán vị xác nhận H3 (CV đúng 0.50 vs CV sai 0.81) | ADR-009 | TV2 |

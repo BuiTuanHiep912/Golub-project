@@ -2,14 +2,15 @@
 
 > Nguồn: `Ke_hoach_trien_khai_project_Golub.pdf`, mục 5.1 (Bảng 5.2) + mô tả chi tiết mục 5.2
 > (công việc 1.1) và 5.3 (công việc 2.4). Cập nhật 06/10/2026 trên nhánh `tv2-review-fixes`
-> theo `Golub_DeTai10/TV2/Danh_gia_TV2.md`.
+> theo `Golub_DeTai10/TV2/Danh_gia_TV2.md`; **cập nhật 07/10/2026**: chạy đủ `make evaluate`
+> (100 hoán vị), sinh hình F10/F11, `notebooks/08_evaluation.ipynb`, `docs/handover/1.1.md`.
 
 TV2 phụ trách **2 công việc kỹ thuật**, mỗi giai đoạn một việc (trưởng nhóm là TV1):
 
 | Giai đoạn | Công việc | Mạch liên kết |
 |---|---|---|
 | GĐ1 (tuần 1–4) | **1.1. Nạp, ghép dữ liệu và kiểm tra chất lượng** (deadline T7 10/10) | Người dựng hạ tầng dữ liệu dựng tiếp hạ tầng đánh giá dùng chung |
-| GĐ2 (tuần 5–7) | **2.4. Khung đánh giá và thí nghiệm selection bias** | |
+| GĐ2 (tuần 5–8) | **2.4. Khung đánh giá và thí nghiệm selection bias** (Tuần 5–7) | |
 
 Mọi code nằm trong cấu trúc chuẩn của repo (`src/`, `tests/`, `docs/`, `Makefile`).
 Thư mục `Golub_DeTai10/TV2/` chỉ giữ tài liệu của TV2: file này, `Danh_gia_TV2.md`,
@@ -32,7 +33,7 @@ Thư mục `Golub_DeTai10/TV2/` chỉ giữ tài liệu của TV2: file này, `D
 | 5 | `tests/test_load.py` (toàn bộ Bảng 2.4, báo lỗi khi chưa có dữ liệu) + `tests/test_quality.py` (dữ liệu tổng hợp); `docs/data_dictionary.md`, `docs/decisions.md` | ✅ |
 | 6 | Viết mục 2.1–2.5, 2.7 của báo cáo (`docs/report/`) | ⬜ chưa làm |
 | 7 | Giao `load_golub()` bản tạm cho TV3 (CN 11/10); giao `samples.parquet` chính thức cho TV1 (CN 18/10) | ⬜ đến hạn |
-| 8 | Ghi chú bàn giao `docs/handover/1.1.md`, trình bày 10 phút + demo (CN 01/11) | ⬜ đến hạn |
+| 8 | Ghi chú bàn giao `docs/handover/1.1.md`, trình bày 10 phút + demo (CN 01/11) | ✅ đã soạn `docs/handover/1.1.md` (07/10); ⬜ còn trình bày + demo |
 
 ### Sản phẩm bàn giao
 - `src/config.py`, `src/load.py`, `src/quality.py`, `tests/test_load.py`, `tests/test_quality.py`
@@ -96,8 +97,8 @@ Chi tiết đáng chú ý trong báo cáo:
 | 1 | `src/evaluate.py`: `evaluate(pipeline, X, y, scheme, seeds)` cho 4 sơ đồ `original_split` (38/34), `loocv` (38 mẫu train, dự đoán gộp), `nested_cv`, `wrong_cv`; số fold và seed đọc từ `config/experiment_config.yaml` (TV1) | ✅ bản 1 (ADR-008) |
 | 2 | Balanced accuracy, AUC, **sensitivity, specificity** (AML dương), khoảng tin cậy **Wilson**; kiểm định **McNemar** cho cặp mô hình trên tập test | ✅ |
 | 3 | Thí nghiệm selection bias: 100 lần hoán vị nhãn × {CV đúng, CV sai} + nhãn thật × {đúng, sai} → số liệu `results/metrics/` | ✅ số liệu |
-| 3b | Vẽ **F10** (violin/strip plot) bằng `src/viz.py` của TV6; notebook `08_evaluation.ipynb` | ⬜ chờ `viz.py` (TV6 giao T4 14/10) |
-| 4 | **F11**: ROC + ma trận nhầm lẫn cho mô hình cuối | ⬜ chờ mô hình cuối (TV3, 2.3) |
+| 3b | Vẽ **F10** (violin/strip plot) + notebook `08_evaluation.ipynb` | ✅ bản 1 (07/10): `plot_selection_bias()` trong `evaluate.py` tự ghi 2 bản report/slide (ADR-009); notebook 15 cell đã chạy thật, 0 lỗi. ⬜ còn chỉnh kiểu dáng theo `viz.py` của TV6 (T4 14/10) |
+| 4 | **F11**: ROC + ma trận nhầm lẫn | ✅ bản 1 (07/10): `plot_roc_cm()` vẽ cho pipeline tạm trên tập test 34 mẫu. ⬜ vẽ lại bằng mô hình cuối khi TV3 giao (2.3) |
 | 5 | Review code TV1/TV3/TV4 phát hiện rò rỉ dữ liệu → `docs/leakage_review.md` | ⬜ chưa có code để review (`golub_wv.py`, `preprocess.py`, `features.py`, `models.py` còn trống) |
 | 6 | Mục 3.5 của báo cáo | ⬜ |
 
@@ -145,6 +146,32 @@ Bảng selection bias (100 hoán vị, dữ liệu thật, pipeline tạm ở tr
 Với nhãn thật, CV sai chỉ cao hơn CV đúng chút ít vì tín hiệu ALL/AML rất mạnh; selection bias
 lộ rõ ở nhãn hoán vị: không có quan hệ thật nào mà CV sai vẫn báo ~0.81.
 
+### Cập nhật 07/10/2026 — chạy đủ 100 hoán vị + sinh hình F10/F11 + notebook
+
+```text
+$ make evaluate
+Thí nghiệm selection bias: 100 lần hoán vị nhãn × {CV đúng, CV sai} …
+Đã ghi results/metrics/summary_evaluation.csv, summary_selection_bias.csv, selection_bias_runs.csv
+Đã ghi hình F10/F11 (bản 1):
+  results/figures/report/F10_selection_bias_report.png
+  results/figures/slides/F10_selection_bias_slide.png
+  results/figures/report/F11_final_model_roc_cm_report.png
+  results/figures/slides/F11_final_model_roc_cm_slide.png
+```
+
+- `selection_bias_runs.csv`: 220 dòng = (100 hoán vị + 10 seed nhãn thật) × {CV đúng, CV sai}
+  → tái lập được bảng selection bias ở trên (Thật/Đúng 0.960, Thật/Sai 0.964,
+  Hoán vị/Đúng 0.501, Hoán vị/Sai 0.807 — bằng chứng H3).
+- **F10/F11** do `src/evaluate.py` sinh (ADR-009): `plot_selection_bias()` vẽ violin + điểm
+  jitter (seed cố định, đường 0.5); `plot_roc_cm()` vẽ ROC + ma trận nhầm lẫn. Mỗi hình có
+  2 bản report (9pt, dpi 220) và slide (17pt, dpi 150) đúng tên yêu cầu của thuyết minh.
+  **Cần mở tay 4 file PNG để duyệt nội dung** (F11 dùng pipeline tạm, chờ mô hình cuối TV3).
+- `notebooks/08_evaluation.ipynb` (15 cell): load cleansed → bảng 4 sơ đồ → demo `keys()`
+  → Wilson + McNemar → bảng 2×2 selection bias (đọc cache CSV) → F10 → F11 → kết luận.
+  Chạy thật bằng nbconvert: **0 lỗi, 0 warning, 2 ảnh nhúng**.
+- `docs/handover/1.1.md` soạn theo `docs/handover/TEMPLATE.md` (mốc CN 01/11).
+- Kiểm lại toàn bộ: `make data` exit 0, `pytest tests/` = **33 passed, 1 skipped**.
+
 ---
 
 ## Hướng triển khai code
@@ -154,7 +181,10 @@ lộ rõ ở nhãn hoán vị: không có quan hệ thật nào mà CV sai vẫn
 | `src/config.py` | đường dẫn, seed, lớp dương, `PALETTE`, danh mục giá trị hợp lệ | ✅ |
 | `src/load.py` | ghép 7 bước mục 2.1.2, 4 parquet, đối chiếu MD5, `load_golub()` | ✅ |
 | `src/quality.py` | 4 mức Bảng 2.9, `quality_report.md`, cờ `qc_outlier` | ✅ |
-| `src/evaluate.py` | 4 sơ đồ, chỉ số, Wilson, McNemar, selection bias | ✅ bản 1 |
-| `tests/test_load.py`, `test_quality.py`, `test_evaluate.py` | Bảng 2.4; QC trên dữ liệu tổng hợp; khung đánh giá | ✅ |
-| `docs/data_dictionary.md`, `docs/decisions.md` | ADR-001…008 | ✅ |
-| `notebooks/08_evaluation.ipynb`, F10, F11, `docs/leakage_review.md` | | ⬜ |
+| `src/evaluate.py` | 4 sơ đồ, chỉ số, Wilson, McNemar, selection bias, vẽ F10/F11 | ✅ bản 1 |
+| `tests/test_load.py`, `test_quality.py`, `test_evaluate.py` | Bảng 2.4; QC trên dữ liệu tổng hợp; khung đánh giá (11 test) | ✅ |
+| `docs/data_dictionary.md`, `docs/decisions.md` | ADR-001…009 | ✅ |
+| `docs/handover/1.1.md` | ghi chú bàn giao theo TEMPLATE | ✅ (còn trình bày 01/11) |
+| `notebooks/08_evaluation.ipynb` | 15 cell, chạy thật 0 lỗi | ✅ |
+| `results/figures/{report,slides}/F10_*.png`, `F11_*.png` + `results/metrics/*.csv` | sinh tự động, chưa commit | ✅ bản 1 (chờ style `viz.py` + mô hình cuối) |
+| `docs/leakage_review.md`, mục 2.1–2.5/2.7 + 3.5 của báo cáo | review rò rỉ + báo cáo | ⬜ (chờ code TV1/TV3/TV4; báo cáo cuối kỳ) |
