@@ -24,7 +24,9 @@ def tables():
     req = {n: STD_DIR / f"{n}.parquet" for n in ("expression", "samples", "genes")}
     missing = [f.name for f in req.values() if not f.exists()]
     if missing:
-        pytest.skip(f"Chưa có tầng standardized ({', '.join(missing)}): chạy `make standardize` trước.")
+        # Fail chứ không skip: đây là test nghiệm thu Bảng 2.4, không có dữ liệu mà báo
+        # xanh thì người nghiệm thu tưởng đã kiểm xong.
+        pytest.fail(f"Chưa có tầng standardized ({', '.join(missing)}): chạy `make standardize` trước.")
     X = pd.read_parquet(req["expression"])
     samples = pd.read_parquet(req["samples"])
     genes = pd.read_parquet(req["genes"])
@@ -48,6 +50,13 @@ def test_samples_shape_72x6(tables):
 def test_sample_id_unique(tables):
     _, samples, _ = tables
     assert samples.index.is_unique and samples.index.is_monotonic_increasing
+
+
+def test_expression_and_samples_share_sample_id(tables):
+    """Bước 7 mục 2.1.2: hai file dùng chung chỉ mục sample_id, cùng thứ tự."""
+    X, samples, _ = tables
+    assert X.index.equals(samples.index)
+    assert list(samples.index) == list(range(1, 73))
 
 
 def test_probe_unique(tables):
@@ -132,5 +141,20 @@ def test_load_golub_cleansed(tables):
     X, samples, _ = tables
     Xc, sc = load_golub(layer="cleansed")
     assert Xc.shape == (72, 7129)
+    assert sc.shape == (72, 7)
     assert "qc_outlier" in sc.columns
+    assert Xc.index.equals(sc.index)
     assert sc["class"].value_counts().equals(samples["class"].value_counts())
+
+
+@pytest.mark.parametrize("layer", ["cleanesd", "raw", ""])
+def test_load_golub_rejects_unknown_layer(layer):
+    # ROOT CAUSE:
+    #
+    # load_golub() từng chọn tầng bằng `cleansed if layer == "cleansed" else standardized`,
+    # nên gõ nhầm tên tầng (hoặc gọi "curated" khi chưa hỗ trợ) vẫn chạy và lặng lẽ trả về
+    # tầng standardized - người dùng không biết mình đang đọc sai tầng.
+    #
+    # Sửa bằng bảng LAYER_FILES và ValueError cho tên không có trong bảng.
+    with pytest.raises(ValueError, match="layer phải là một trong"):
+        load_golub(layer=layer)

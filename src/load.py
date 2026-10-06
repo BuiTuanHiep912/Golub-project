@@ -8,14 +8,17 @@ Nguồn (data/raw/):
   - kaggle/data_set_ALL_AML_independent.csv: ma trận biểu hiện + call, patient 39..72
   - kaggle/actual.csv                      : nhãn ALL/AML (theo mã bệnh nhân) - NGUỒN NHÃN CHÍNH
   - openintro/golub.csv                    : metadata 6 cột mô tả (Samples, BM.PB, Gender,
-                                             Source, tissue.mf, cancer) - ADR-001
+                                             Source, tissue.mf, cancer) - ADR-001; tissue.mf
+                                             chỉ dùng để kiểm tra chéo rồi bỏ (Bảng 2.2)
 
 Đầu ra data/standardized/:
   - expression.parquet : 72 x 7129, index = sample_id (int = mã bệnh nhân), cột = probe, int
   - calls.parquet      : 72 x 7129, giá trị P/A/M (có thể NA) - để tham khảo, không dùng mô hình
   - samples.parquet    : 72 x 6 (split, class, subtype, tissue, source, sex), index = sample_id
   - genes.parquet      : probe_id, description, is_control (tiền tố AFFX) - cho TV4/TV5
-  - data/raw/SOURCES.md: MD5 từng file raw + nguồn tải
+  - data/raw/SOURCES.md: chỉ đối chiếu MD5, không ghi đè (ADR-005)
+
+API cho cả nhóm: load_golub(layer) với layer ∈ standardized / cleansed / curated.
 """
 from __future__ import annotations
 
@@ -26,11 +29,13 @@ import pandas as pd
 
 try:
     from src.config import (
-        DATA_DIR, RAW_DIR, STD_DIR, KAGGLE_DIR, OPEN_INTRO_DIR,
+        DATA_DIR, RAW_DIR, STD_DIR, CLEANSED_DIR, CURATED_DIR, KAGGLE_DIR, OPEN_INTRO_DIR,
+        VALID_SUBTYPE,
     )
-except ModuleNotFoundError:  # module chạy như bản làm việc trong TV2/code
+except ModuleNotFoundError:  # chạy trực tiếp `python src/load.py` (src/ nằm trên sys.path)
     from config import (
-        DATA_DIR, RAW_DIR, STD_DIR, KAGGLE_DIR, OPEN_INTRO_DIR,
+        DATA_DIR, RAW_DIR, STD_DIR, CLEANSED_DIR, CURATED_DIR, KAGGLE_DIR, OPEN_INTRO_DIR,
+        VALID_SUBTYPE,
     )
 
 KAGGLE_TRAIN = KAGGLE_DIR / "data_set_ALL_AML_train.csv"
@@ -47,12 +52,21 @@ META_COL_RENAME = {
     "Gender": "sex",
     "Source": "source",
     "cancer": "subtype",       # allB / allT / aml
-    "tissue.mf": "morphology",  # tài liệu, không dùng trong mô hình
+    "tissue.mf": "tissue_mf",  # "<tissue>:<m|f|NA>" - chỉ để kiểm tra chéo, không ghi ra (Bảng 2.2)
 }
 SUBTYPE_MAP = {"allB": "B-ALL", "allT": "T-ALL", "aml": "AML"}
 
 # Thứ tự cột chuẩn của samples.parquet (File 1, Bảng 2.3a)
 SAMPLE_COLS = ["split", "class", "subtype", "tissue", "source", "sex"]
+# Các cột bắt buộc có giá trị sau khi ghép (bước 6); riêng sex được phép thiếu (ADR-001)
+REQUIRED_COLS = ["split", "class", "subtype", "tissue", "source"]
+
+# File ma trận biểu hiện của từng tầng mà load_golub() đọc (Bảng 2.5)
+LAYER_FILES = {
+    "standardized": (STD_DIR, "expression.parquet", "make standardize"),
+    "cleansed": (CLEANSED_DIR, "expression.parquet", "make quality"),
+    "curated": (CURATED_DIR, "X_log10.parquet", "make curate (TV3 - công việc 1.2)"),
+}
 
 DESC_COL = "Gene Description"
 PROBE_COL = "Gene Accession Number"
@@ -210,19 +224,23 @@ def build() -> pd.DataFrame:
     X = expr.drop(columns=["split"]).astype(int)
     calls = calls.astype(object)
 
-    # 3. Nhãn theo mã bệnh nhân
+    # 3. Nhãn theo mã bệnh nhân; 4. metadata OpenIntro
     labels = _load_labels()
-
-    # 4-5. Metadata + ghép left-join một-một, validate one_to_one
     meta = _load_metadata()
-    samples = meta.join(labels, how="outer", validate="one_to_one")
+    # Left join (bước 5) sẽ lặng lẽ bỏ mẫu chỉ có ở một nguồn -> so tập mã trước khi ghép.
+    _assert_same_ids(kaggle=X.index, actual_csv=labels.index, openintro=meta.index)
 
-    samples["split"] = split
-    samples = samples[SAMPLE_COLS].sort_index()
+    # 3+5. Bảng mẫu gốc là Kaggle (split); ghép nhãn rồi metadata bằng left join theo
+    # sample_id, validate one_to_one để mã trùng ở bất kỳ nguồn nào đều báo lỗi.
+    samples = (split.to_frame()
+               .join(labels, how="left", validate="one_to_one")
+               .join(meta, how="left", validate="one_to_one")
+               .sort_index())
     samples.index.name = "sample_id"
 
-    # 6. Kiểm tra sau ghép (Bảng 2.4) - báo lỗi rõ để nhóm xử lý, không sửa tay
-    _assert_post_merge(samples)
+    # 6. Kiểm tra sau ghép - báo lỗi kèm danh sách mẫu lệch, không sửa tay
+    _assert_post_merge(samples, X)
+    samples = samples[SAMPLE_COLS]
 
     # Kiểm tra bắt buộc trước khi ghi (Bảng 2.4)
     if X.shape != (72, 7129):
@@ -244,17 +262,54 @@ def build() -> pd.DataFrame:
     return samples
 
 
-def _assert_post_merge(samples: pd.DataFrame) -> None:
-    """Các kiểm tra Bắt buộc sau khi ghép → nếu lệch, in rõ và ghi decisions.md (2.1.2)."""
-    checks = {
-        "Số mẫu": len(samples) == 72,
-        "Không mẫu thiếu class": samples["class"].notna().all(),
-        "Không mẫu thiếu subtype": samples["subtype"].notna().all(),
-        "Một-một giữa metadata và nhãn": samples.index.is_unique,
-    }
-    miss = {k for k, ok in checks.items() if not ok}
-    if miss:
-        raise ValueError(f"Kiểm tra sau ghép thất bại: {miss} — xem docs/decisions.md")
+def _assert_same_ids(**sources: pd.Index) -> None:
+    """Mọi nguồn phải có đúng cùng một tập sample_id; lệch thì liệt kê mã thừa/thiếu."""
+    ref_name, ref = next(iter(sources.items()))
+    problems = []
+    for name, ids in sources.items():
+        extra, missing = sorted(set(ids) - set(ref)), sorted(set(ref) - set(ids))
+        if extra or missing:
+            problems.append(f"{name} so với {ref_name}: thừa {extra}, thiếu {missing}")
+    if problems:
+        raise ValueError("Tập sample_id giữa các nguồn không khớp:\n  " + "\n  ".join(problems)
+                         + "\n→ kiểm tra cột Samples của OpenIntro, ghi quyết định vào docs/decisions.md")
+
+
+def _assert_post_merge(samples: pd.DataFrame, X: pd.DataFrame) -> None:
+    """Kiểm tra bắt buộc sau khi ghép (bước 6, mục 2.1.2).
+
+    Lệch thì ném lỗi kèm mã mẫu cụ thể: nguyên tắc là không sửa tay dữ liệu, liệt kê
+    mẫu lệch rồi ghi quyết định vào docs/decisions.md.
+    """
+    problems = []
+    if len(samples) != 72:
+        problems.append(f"số mẫu = {len(samples)}, kỳ vọng 72")
+    if not X.index.equals(samples.index):
+        problems.append("biểu hiện và bảng mẫu không cùng chỉ mục sample_id")
+    for col in REQUIRED_COLS:
+        miss = samples.index[samples[col].isna()].tolist()
+        if miss:
+            problems.append(f"thiếu {col} ở mẫu {miss}")
+
+    # class (Kaggle) phải nhất quán với subtype (OpenIntro): B-ALL/T-ALL thuộc ALL, AML thuộc AML
+    allowed = samples["class"].map(VALID_SUBTYPE)
+    bad = [sid for sid, sub, al in zip(samples.index, samples["subtype"], allowed)
+           if not (isinstance(al, set) and sub in al)]
+    if bad:
+        problems.append(f"class không khớp subtype ở mẫu {bad}")
+
+    # tissue.mf là tổ hợp "<tissue>:<giới tính viết thường|NA>" (Bảng 2.2); dựng lại từ
+    # tissue + sex để chắc hai cột kia được đọc và đổi tên đúng.
+    rebuilt = samples["tissue"] + ":" + samples["sex"].str.lower().fillna("NA")
+    bad = samples.index[rebuilt != samples["tissue_mf"]].tolist()
+    if bad:
+        problems.append(f"tissue.mf không khớp tissue + sex ở mẫu {bad}")
+
+    if problems:
+        raise ValueError("Kiểm tra sau ghép thất bại:\n  " + "\n  ".join(problems)
+                         + "\n→ xem docs/decisions.md")
+    print("[OK] Kiểm tra sau ghép: 72 mẫu, đủ metadata, class khớp subtype 72/72, "
+          "tissue.mf khớp tissue + sex 72/72")
 
 
 def _print_summary(samples: pd.DataFrame) -> None:
@@ -270,17 +325,33 @@ def _print_summary(samples: pd.DataFrame) -> None:
 # API cho cả nhóm
 # ---------------------------------------------------------------------------
 def load_golub(layer: str = "cleansed") -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Nạp expression + samples từ tầng cleansed (mặc định) hoặc standardized.
+    """Nạp ma trận biểu hiện + bảng mẫu của một tầng dữ liệu, dùng chung cho cả nhóm.
+
+    layer:
+        "standardized": giá trị gốc, samples 6 cột
+        "cleansed"    : giá trị gốc đã kiểm tra chất lượng, samples thêm qc_outlier (mặc định)
+        "curated"     : X_log10.parquet của TV3 (threshold + log10) - đầu vào của mọi mô hình
 
     Returns:
-        X      : (72, 7129), index = sample_id (int), cột = probe id
-        samples: bảng mô tả mẫu cùng chỉ mục sample_id
+        X      : (72, p), index = sample_id (int), cột = probe id
+        samples: bảng mô tả mẫu, CÙNG chỉ mục và thứ tự với X (đã kiểm tra)
+
+    Tên tầng sai thì báo lỗi ngay thay vì lặng lẽ đọc tầng khác; tầng chưa sinh thì
+    báo lệnh cần chạy.
     """
-    base = DATA_DIR / "cleansed" if layer == "cleansed" else STD_DIR
-    X = pd.read_parquet(base / "expression.parquet")
-    samples = pd.read_parquet(base / "samples.parquet")
+    if layer not in LAYER_FILES:
+        raise ValueError(f"layer phải là một trong {sorted(LAYER_FILES)}, nhận {layer!r}")
+    base, expr_name, make_cmd = LAYER_FILES[layer]
+    paths = [base / expr_name, base / "samples.parquet"]
+    missing = [p.name for p in paths if not p.exists()]
+    if missing:
+        raise FileNotFoundError(f"Tầng {layer} chưa có {missing} trong {base} — chạy `{make_cmd}` trước.")
+    X = pd.read_parquet(paths[0])
+    samples = pd.read_parquet(paths[1])
     X.index = X.index.astype(int)
     samples.index = samples.index.astype(int)
+    if not X.index.equals(samples.index):
+        raise ValueError(f"Tầng {layer}: X và samples không cùng chỉ mục sample_id")
     return X, samples
 
 

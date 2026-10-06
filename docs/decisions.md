@@ -10,8 +10,9 @@ tái lập được và truy ngược về nguồn.
 - **Quyết định:** `golub.csv` là nguồn metadata chính; đọc bằng `usecols` để chỉ lấy
   6 cột (bỏ 7129 cột biểu hiện của OpenIntro, vì biểu hiện lấy từ Kaggle).
 - **Ánh xạ cột:** `Samples→sample_id`, `BM.PB→tissue`, `Gender→sex`, `Source→source`,
-  `cancer→subtype` (`allB→B-ALL`, `allT→T-ALL`, `aml→AML`), `tissue.mf→morphology`
-  (giữ để tài liệu, không dùng trong mô hình).
+  `cancer→subtype` (`allB→B-ALL`, `allT→T-ALL`, `aml→AML`). `tissue.mf` (tổ hợp mô và
+  giới tính, không phải "morphology") chỉ dùng để kiểm tra chéo trong `load.py` rồi bỏ,
+  đúng Bảng 2.2 — sửa ngày 06/10/2026, khớp 72/72.
 - **Hệ quả:** `Gender` thiếu 23/72 là thiếu thật ở nguồn → giữ NaN, không tự điền.
 
 ## ADR-002 — Nhãn `class` lấy theo Kaggle (`actual.csv`)
@@ -26,14 +27,35 @@ tái lập được và truy ngược về nguồn.
   mã bệnh nhân, không theo vị trí.
 
 ## ADR-004 — Tầng cleansed chỉ gắn cờ `qc_outlier`, không xóa mẫu
-- **Ngày:** 05/10/2026 · **Người quyết định:** TV2
-- **Lý do:** mức 4 của mục 2.5 chỉ phát hiện, không tự quyết xóa dữ liệu. Cần review
-  của nhóm trước khi loại mẫu. Hiện chưa có mẫu nào bị gắn cờ.
+- **Ngày:** 05/10/2026, sửa 06/10/2026 · **Người quyết định:** TV2
+- **Lý do:** mức Record của mục 2.5 chỉ phát hiện, không tự quyết xóa dữ liệu. Cần review
+  của nhóm trước khi loại mẫu.
+- **Cách phát hiện (sửa 06/10/2026):** bản cũ dùng z-score toàn ma trận (|z| lớn nhất chỉ
+  ~2.5 nên không thể vượt ngưỡng 4) và gán cờ theo vị trí thay vì `sample_id`. Bản mới
+  theo Bảng 2.9: tương quan giữa các mẫu và boxplot theo mẫu (trung vị, IQR) trên log10,
+  modified z-score median/MAD ngưỡng 3.5 (Iglewicz & Hoaglin, 1993), cộng phát hiện trùng
+  lặp (tương quan > 0.99).
+- **Kết quả:** mẫu 21 (train, ALL, DFCI) bị gắn cờ do tương quan trung vị thấp (0.756,
+  z = −4.7). Vẫn giữ trong mọi phân tích; TV1/TV6 đối chiếu với boxplot F3 và PCA.
 
 ## ADR-005 — `SOURCES.md` do người tải ghi tay; code chỉ đối chiếu MD5
 - **Ngày:** 05/10/2026 · **Người quyết định:** TV2
 - **Lý do:** file ghi thêm ngày tải và người tải (thông tin ngoài phạm vi code).
   `src.load.write_sources()` in MD5 thực tế, cảnh báo nếu lệch, không ghi đè.
+
+## ADR-006 — Kiểm tra chất lượng thất bại thì dừng pipeline
+- **Ngày:** 06/10/2026 · **Người quyết định:** TV2
+- **Quyết định:** có `[FAIL]` thì `src.quality` vẫn ghi `quality_report.md` nhưng không ghi
+  (và xóa bản cũ của) `expression/samples.parquet` tầng cleansed, rồi thoát mã 1 để
+  `make data` dừng. `tests/test_load.py` báo lỗi (không skip) khi chưa có dữ liệu, để test
+  nghiệm thu không thể xanh mà không kiểm gì.
+
+## ADR-007 — Cố định phiên bản thư viện
+- **Ngày:** 06/10/2026 · **Người quyết định:** TV2
+- **Quyết định:** `environment.yml` và `requirements.txt` ghi cùng một bộ phiên bản, đã chạy
+  `make standardize quality` + pytest xanh trên Python 3.11 (mục 2.7).
+- **Ghi chú:** `pyarrow` ghim 24.0.0 vì `streamlit 1.65.0` loại trừ đúng bản 25.0.0 và
+  conda-forge chưa có 25.0.1; `gseapy` chỉ cài qua pip vì không có trên conda-forge.
 
 ## Nhật ký nhanh (mục 5.2 kế hoạch)
 
@@ -41,3 +63,6 @@ tái lập được và truy ngược về nguồn.
 |---|---|---|---|
 | 05/10/2026 | Dùng Kaggle (biểu hiện gen + nhãn) + 6 cột mô tả của OpenIntro | Kaggle thiếu metadata; bản biểu hiện OpenIntro đã chuẩn hóa nên không dùng | TV2 |
 | 05/10/2026 | Cấu trúc tầng raw → standardized → cleansed → curated → sandbox | Mục 2.2, Bảng 2.5 | Cả nhóm |
+| 06/10/2026 | Viết lại kiểm tra chất lượng theo đúng 4 mức Bảng 2.9; mẫu 21 gắn cờ `qc_outlier` | ADR-004 | TV2 |
+| 06/10/2026 | Ghép theo left join vào bảng mẫu Kaggle, so tập `sample_id` của 3 nguồn trước khi ghép | Mục 2.1.2 bước 5–6 | TV2 |
+| 06/10/2026 | Kiểm tra FAIL dừng pipeline; cố định phiên bản thư viện | ADR-006, ADR-007 | TV2 |

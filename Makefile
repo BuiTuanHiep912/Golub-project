@@ -7,8 +7,8 @@ quality:       ## standardized/ -> cleansed/ + quality_report.md
 	$(PY) -m src.quality
 curate:        ## cleansed/ -> curated/
 	$(PY) -m src.preprocess
-test:
-	pytest tests/
+test:          ## dùng đúng python của môi trường, không lấy nhầm pytest hệ thống
+	$(PY) -m pytest tests/
 data: standardize quality curate test
 
 experiments:   ## chạy thí nghiệm giai thừa, ghi results/metrics/runs.parquet
