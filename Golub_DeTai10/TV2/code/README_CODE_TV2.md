@@ -1,45 +1,49 @@
-# TV2 – code (mục 1.1 + 2.4)
+# TV2 – code (công việc 1.1 + 2.4)
+
+Code của TV2 nằm trong cấu trúc chuẩn của repo, **không** nằm trong thư mục này. Thư mục
+`Golub_DeTai10/TV2/code/` chỉ còn file hướng dẫn này (bản làm việc cũ đã gộp hết vào `src/`).
 
 ## Các module
-| File | Công việc |
-|---|---|
-| `config.py` | Đường dẫn repo (root = `Golub_DeTai10/`), `PALETTE`, tập giá trị hợp lệ (`VALID_TISSUE/SOURCE/SEX`), `RANDOM_SEED` |
-| `fetch_raw.py` | Sao chép 3 file Kaggle + `dataset_more.csv` → `data/raw/`; ghi MD5 |
-| `load.py` | Nạp/ghép theo mục 2.1.2 → `expression/calls/samples/genes.parquet`; ghi `data/raw/SOURCES.md` |
-| `quality.py` | Kiểm tra 4 mức (mục 2.5) → `data/cleansed/quality_report.md` |
-| `test_load.py` | 15 test bảng 2.4 |
-| `evaluate.py` | `evaluate(pipe, X, y, scheme)` với scheme ∈ `original_split`, `loocv`, `nested_cv`, `wrong_cv`; balanced acc, AUC, Wilson CI |
-| `selection_bias.py` | Hoán vị nhãn × {CV đúng, sai} → `results/metrics/selection_bias_{summary,permutations}.csv` (F10) |
-| `roc_cm.py` | ROC + confusion matrix → `results/figures/report/F11_roc_cm.png` |
+| File | Công việc | Nội dung |
+|---|---|---|
+| `src/config.py` | 1.1 | Đường dẫn các tầng dữ liệu, `RANDOM_SEED`, lớp dương `AML`, `PALETTE`, danh mục giá trị hợp lệ, `N_PERMS_EVAL` |
+| `src/load.py` | 1.1 | Ghép 7 bước mục 2.1.2 (theo `sample_id`, left join, `validate="one_to_one"`) → `data/standardized/{expression,calls,samples,genes}.parquet`; đối chiếu MD5 với `SOURCES.md`; `load_golub(layer)` |
+| `src/quality.py` | 1.1 | 4 mức Bảng 2.9 → `data/cleansed/` + `quality_report.md`; cờ `qc_outlier` |
+| `src/evaluate.py` | 2.4 | `evaluate(pipeline, X, y, scheme, seeds)` với `original_split`, `loocv`, `nested_cv`, `wrong_cv`; `wilson_ci`, `mcnemar_test`, `selection_bias_experiment` |
+| `tests/test_load.py` | 1.1 | Toàn bộ Bảng 2.4 trên dữ liệu thật |
+| `tests/test_quality.py` | 1.1 | Kiểm tra chất lượng trên dữ liệu tổng hợp (gắn cờ đúng mẫu, FAIL dừng pipeline) |
+| `tests/test_evaluate.py` | 2.4 | 4 sơ đồ, Wilson, McNemar, cơ chế selection bias trên dữ liệu tổng hợp |
 
-## Cách chạy
+Nguồn metadata là `data/raw/openintro/golub.csv` (6 cột mô tả, ADR-001); nhãn lấy từ Kaggle
+`actual.csv` (ADR-002).
+
+## Cách chạy (tại gốc repo)
 ```bash
-# Tại gốc repo Golub_DeTai10/ (Makefile) - chạy trọn gói:
-make data          # fetch -> standardized -> cleansed
-make test          # pytest test_load.py (15 tests)
-make all           # data + test + evaluate + figures
-
-# Hoặc chạy trực tiếp từ code/:
-cd code && python3 load.py && python3 quality.py
-python3 -m pytest test_load.py
-python3 evaluate.py && python3 selection_bias.py && python3 roc_cm.py
+conda env create -f environment.yml && conda activate golub   # hoặc pip install -r requirements.txt
+# tải dữ liệu thô: xem lệnh trong data/raw/SOURCES.md, đối chiếu MD5
+make standardize   # python -m src.load      raw/ -> standardized/
+make quality       # python -m src.quality   standardized/ -> cleansed/ + quality_report.md
+make test          # python -m pytest tests/
+make evaluate      # python -m src.evaluate  4 sơ đồ + selection bias -> results/metrics/summary_*.csv
+make data          # standardize + quality + curate (TV3) + test
 ```
+Trên Windows: `python run_all.py data` / `python run_all.py evaluate`.
 
-## Demo nghiệm thu (đã chạy thật trên dữ liệu Golub)
-```bash
-$ make data && make test
-test_load.py ............ 15 passed
-```
+## Demo nghiệm thu
 ```python
->>> from load import load_golub       # chạy trong code/; config.py nằm cùng thư mục
+>>> from src.load import load_golub
 >>> X, samples = load_golub(layer='cleansed')
 >>> X.shape, samples.shape            # (72, 7129), (72, 7)
 >>> samples['class'].value_counts()   # ALL 47, AML 25 (khớp Bảng 2.4)
+>>> from src.evaluate import evaluate
+>>> res = evaluate(pipe, X, samples['class'], scheme='nested_cv', seeds=range(10))
+>>> res.keys()   # bal_acc_mean, bal_acc_sd, auc_mean, per_fold, config, predictions
 ```
-Selection bias (100 hoán vị): hoán vị/đúng 0.510 ≈ 0.50; hoán vị/sai 0.743 → bằng chứng H3.
-F11: ROC/CM LogReg 50 gen, AUC thật trên split 38/34 → `results/figures/report/F11_roc_cm.png`.
+Kết quả chạy thật (06/10/2026) và trạng thái từng việc: xem `Golub_DeTai10/TV2/Cong_viec_chi_tiet_TV2.md`.
 
 ## Ghi chú
-- Code chạy 2 chế độ import: nếu đặt trong bố cục `src/` (`from src.config import …`) hoặc chạy rời từ `code/` (`from config import …`) — dùng `try/except ModuleNotFoundError`. Khi merge nhóm về `src/` không phải sửa import.
-- Nguồn metadata là `dataset_more.csv` (ADR-001); `openintro/golub.csv` không tồn tại trong kho nên không dùng.
-- Dữ liệu thô nằm ngoài git (dataset/ môn học); tái tạo bằng `make data`.
+- `src/load.py` và `src/quality.py` chạy được cả bằng `python -m src.<module>` lẫn
+  `python src/<module>.py` (import thử `src.config` rồi mới tới `config`).
+- Dữ liệu (`data/`) và báo cáo chất lượng không đưa lên Git; tạo lại bằng các lệnh trên.
+- Chưa làm: hình F10/F11 (chờ `src/viz.py` của TV6 và mô hình cuối của TV3), notebook
+  `08_evaluation.ipynb`, `docs/leakage_review.md` (chờ code TV1/TV3/TV4).
