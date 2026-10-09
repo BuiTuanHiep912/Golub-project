@@ -154,3 +154,111 @@ _Cập nhật 07/10/2026. Phần I giữ nguyên làm bản đánh giá gốc t�
 
 **Kết luận:** cả 8 lỗi code và các lỗi tài liệu nêu ở Phần I đã được sửa và kiểm chứng lại;
 phần còn lại phụ thuộc công việc của TV1/TV3/TV6 và nội dung báo cáo cuối kỳ.
+
+## Phần III. Đánh giá cấu trúc thư mục sau commit `363fc5f` (07/10/2026)
+
+> Ghi lại ngày 09/10/2026 (bản ghi ngày 07/10 chưa commit nên đã mất). Kiểm lại hiện trạng ngày
+> 09/10: 2 file PDF vẫn chưa có trên đĩa; 25 file trong `data/sandbox/` vẫn được git theo dõi;
+> `Golub_DeTai10/TV2/__pycache__/` vẫn còn ở gốc. Các nhận định dưới đây vẫn đúng.
+
+Căn cứ: cây thư mục mục 2.2 và Bảng 2.5 của kế hoạch. Đã kiểm trên đĩa, trong `git ls-files`,
+và chạy lại pipeline + test trên commit `363fc5f`: `make quality` ĐẠT, `33 passed, 1 skipped`.
+
+### Kết luận: hợp lý hơn ở gốc repo, chưa hợp lý ở cách dùng sandbox
+
+**Phần tốt hơn**
+- Gốc repo giờ khớp đúng cây mục 2.2 (`config/ data/ docs/ notebooks/ results/ src/ tests/` + file
+  môi trường); thư mục lạ `Golub_DeTai10/` không còn được git theo dõi.
+- Bản làm việc cũ được giữ làm nháp thay vì xoá hẳn.
+
+**Phần chưa hợp lý**
+1. **Mất 2 file PDF.** `Ke_hoach_trien_khai_project_Golub.pdf` (đặc tả của cả dự án) và
+   `Thuyet_minh_nhiem_vu_TV2.pdf` bị xoá khỏi git và **không có ở đâu trên đĩa**, kể cả
+   `data/sandbox/`. Khôi phục được: `git show 82dee9d:<tên file> > <tên file>`.
+2. **Sandbox bị đưa lên git, trái kế hoạch.** Mục 2.2 ghi `data/` nằm trong `.gitignore` và sandbox là
+   "nháp riêng, không kết quả nào trong báo cáo lấy từ đây". `.gitignore` vẫn chặn `data/**`,
+   nhưng 25 file trong `data/sandbox/TV2/` đã bị ép vào git. Hệ quả: file mới trong sandbox bị bỏ qua,
+   còn file cũ thì vẫn bị theo dõi, nên trạng thái không nhất quán.
+3. **Hai nguồn sự thật mâu thuẫn trong git.**
+   - `data/sandbox/.../docs/decisions.md` ghi ADR-001 = `dataset_more.csv`, ngược với `docs/decisions.md` (golub.csv).
+   - `.../docs/leakage_review.md` chấm "✅ Đạt" cho `golub_wv.py` của TV1, trong khi `src/golub_wv.py` vẫn là `# TODO`.
+   - `.../results/metrics/selection_bias_summary.csv` còn số cũ không kiểm chứng (0.970 / 0.743).
+   - Có 8 file `.py` cũ (`load.py`, `quality.py`, `evaluate.py`…) song song với `src/`, mang các lỗi đã sửa
+     (z-score toàn cục, `dataset_more.csv`).
+4. **Tài liệu chính thức của TV2 bị đặt vào chỗ nháp.** `Danh_gia_TV2.md`,
+   `Cong_viec_chi_tiet_TV2.md`, `tao_thuyet_minh_pdf.py` là tài liệu bàn giao, nên thuộc `docs/`.
+5. **Hỏng do đổi chỗ.**
+   - `tao_thuyet_minh_pdf.py` tính `OUT = parents[2]`, giờ trỏ vào `data/sandbox/TV2/` (bị ignore)
+     thay vì gốc repo.
+   - `README_CODE_TV2.md` ghi "thư mục code chỉ còn file này" trong khi bên cạnh có 8 file `.py`.
+   - Các tài liệu vẫn ghi đường dẫn `Golub_DeTai10/TV2/...`.
+6. **Lặt vặt.**
+   - Tên thư mục là `TV2`, kế hoạch dùng `tv2/`.
+   - `Golub_DeTai10/TV2/__pycache__/` còn sót ở gốc (chỉ trên đĩa).
+   - Bài báo Golub 1999 (476 KB) được commit: nếu repo GitHub công khai thì nên chỉ ghi DOI.
+   - `results/` (PNG, CSV) được commit, trong khi mục 2.2 chỉ đưa mã nguồn, cấu hình và tài liệu lên
+     GitHub. Thêm nữa, F11 hiện vẽ từ pipeline tạm.
+   - Commit `363fc5f` gộp nhiều việc khác nhau với message chỉ là tên file.
+
+### Chỗ `07102026.md` tóm tắt sai hoặc thiếu
+- Ghi "chưa commit gì trong ngày": thực tế đã commit `363fc5f` và đẩy lên `origin/nhap`.
+- Ghi "file ở sandbox không bị git theo dấu": thực tế 25 file đang được theo dõi.
+- Ghi "2 PDF chuyển vào `data/sandbox/`": thực tế không có trên đĩa.
+- Ghi "`Golub_DeTai10/` gồm `TV1/`, `TV6/`, `data/`": thực tế sandbox không có các thư mục này.
+- Không nhắc tới: bài báo PDF, 8 file code cũ, `docs/` cũ mâu thuẫn, `results/` cũ, đường dẫn
+  `tao_thuyet_minh_pdf.py` bị hỏng, `__pycache__` sót ở gốc.
+
+### Cấu trúc đề xuất (chưa thực hiện — chờ quyết định)
+```
+docs/
+├── Ke_hoach_trien_khai_project_Golub.pdf     # khôi phục từ 82dee9d
+└── tv2/                                       # tài liệu bàn giao của TV2 (trong git)
+    ├── Thuyet_minh_nhiem_vu_TV2.pdf           # khôi phục, sinh lại bằng script bên cạnh
+    ├── tao_thuyet_minh_pdf.py                 # sửa OUT trỏ về docs/tv2/
+    ├── Cong_viec_chi_tiet_TV2.md
+    ├── Danh_gia_TV2.md
+    └── nhat_ky/07102026.md
+data/sandbox/tv2/                              # chỉ trên máy (git rm --cached), đúng mục 2.2
+└── Golub_DeTai10/ (code, docs, results cũ)
+```
+Cần chốt trước khi làm: có commit `results/` không; có giữ bài báo PDF trong repo không.
+
+## Phần IV. TV2 đã xong cả 2 giai đoạn chưa? (07/10/2026)
+
+> Ghi lại ngày 09/10/2026. Kiểm lại hiện trạng ngày 09/10: `golub_wv.py`, `preprocess.py`,
+> `features.py`, `models.py`, `viz.py` vẫn là `# TODO`; `docs/report/` vẫn trống. Bảng dưới vẫn đúng.
+
+**Chưa.** Phần code của GĐ1 đã xong. GĐ2 mới có bản 1 làm sớm, phần còn lại phụ thuộc code của
+TV1/TV3/TV4/TV6.
+
+| Giai đoạn | Đã xong | Còn lại |
+|---|---|---|
+| GĐ1 – 1.1 (hạn T7 10/10) | `load.py`, `quality.py`, `tests/`, `data_dictionary.md`, `decisions.md`, nháp `docs/handover/1.1.md` | Mục 2.1–2.5, 2.7 của báo cáo (`docs/report/` trống); giao `load_golub()` cho TV3 (CN 11/10), `samples.parquet` cho TV1 (CN 18/10); nghiệm thu với TV1 và trình bày (CN 01/11); khôi phục 2 PDF đã mất (Phần III) |
+| GĐ2 – 2.4 (tuần 5–7) | `evaluate.py` bản 1 (4 sơ đồ, Wilson, McNemar), selection bias 100 hoán vị, F10, notebook 08 | Chạy lại trên `X_log10` của TV3; F11 cho mô hình cuối của TV3 (hiện vẽ từ pipeline tạm); McNemar giữa các mô hình thật; review rò rỉ TV1/TV3/TV4 (`docs/leakage_review.md`); vẽ lại F10/F11 theo `viz.py` của TV6; mục 3.5 của báo cáo |
+
+Việc nên làm ngay trước 10/10: viết các mục báo cáo của GĐ1 và khôi phục 2 PDF.
+
+## Phần V. Cập nhật `notebooks/TV2_tong_quan_cong_viec.ipynb` (09/10/2026)
+
+Sửa ô `fefd3cf0` (mục 4, bảng §5.2), chỉ thay đúng một dòng nguồn; các ô khác và kết quả chạy
+giữ nguyên từng byte; `nbformat.validate` đạt, hàng "Công việc cụ thể" vẫn render đúng 2 ô.
+Mọi tên hàm, tên test và con số đối chiếu với code tại HEAD `0edc240` (không đổi từ `8d3f364`).
+
+1. **Thêm mô tả quá trình** (khuôn: dữ liệu vào → hàm/trình tự → kết quả) cho:
+   - `src/quality.py`: đầu vào 3 parquet tầng standardized; `run_quality()` gọi `check_value`,
+     `check_value_set`, `check_record`, `check_relation` theo thứ tự Bảng 2.9, kèm số liệu thật
+     (241357 / 4259 / 147174; 58 AFFX; 926 probe / 424 mô tả; mẫu 21, r = 0.756, z = −4.7); FAIL
+     dừng pipeline (ADR-006); `test_quality.py`; đầu ra 3 file `data/cleansed/`.
+   - `tests/test_load.py`: fixture `tables` (thiếu dữ liệu → fail); 9 test ứng với 8 dòng
+     Bảng 2.4 (có tên test và số kỳ vọng); 10 test định dạng/API; kết quả `19 passed`.
+   - `docs/data_dictionary.md`: nguồn thông tin, cách viết theo chiều chảy dữ liệu, nội dung 5
+     mục, kết quả (84 dòng).
+2. **Sửa phần `src/load.py` do TV2 viết:**
+   - Lỗi gõ `golgle/golub.csv` → `openintro/golub.csv`.
+   - Câu "`_load_metadata()` … ghép theo `sample_id`" sửa thành "đặt `sample_id` làm chỉ mục":
+     việc ghép nằm trong `build()`, không trong `_load_metadata()`.
+   - Thêm các bước kiểm tra `build()` thật sự chạy: lỗi file/probe ở `_load_kaggle_expression()`;
+     `_assert_same_ids()` trước khi ghép; ghép left join `validate="one_to_one"`;
+     `_assert_post_merge()` sau ghép (72 mẫu, cùng chỉ mục, đủ metadata, class khớp subtype,
+     `tissue.mf` khớp tissue + sex); kiểm tra (72,7129) và NaN trước khi ghi; `write_sources()`
+     đối chiếu MD5 (ADR-005); in bảng chéo đối chiếu Bảng 2.4.
