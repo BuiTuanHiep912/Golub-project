@@ -1,0 +1,16 @@
+# Dữ liệu và kết quả có thể tái tạo bằng `make all` (Bảng 2.6) -> không đưa lên Git
+data/
+results/
+
+# Ngoại lệ: giữ checksum nguồn dữ liệu trên Git
+!data/raw/SOURCES.md
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db

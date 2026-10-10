@@ -1,24 +1,21 @@
 """
 TV2 - src/config.py (mục 2.2 kiến trúc lưu trữ theo tầng, Bảng 2.5/2.6).
 
-Gốc đường dẫn là thư mục repo `golub-project` (chứa src/, data/, results/, docs/).
-Cách dùng chung cho mọi module:
-
-    from src.config import DATA_DIR, RAW_DIR, STD_DIR, ...
-
-Khi chạy trực tiếp một module (`python src/load.py`) thì `src` chưa nằm trên
-sys.path, nên các module dùng try/except:
+Trong repo group, module này là `src/config.py`. Khi làm việc ở thư mục TV2/code,
+các module chạy với bản local này (import `from config import ...`). Cách dùng chung:
 
     try:
-        from src.config import ...
+        from src.config import DATA_DIR, RAW_DIR, STD_DIR, ...
     except ModuleNotFoundError:
-        from config import ...
+        from config import DATA_DIR, RAW_DIR, STD_DIR, ...
+
+Toàn bộ đường dẫn lấy gốc tại golub-project (đây là Golub_DeTai10/).
 """
 from __future__ import annotations
 
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]  # src/ -> golub-project
+PROJECT_ROOT = Path(__file__).resolve().parents[2]  # TV2/code -> Golub_DeTai10
 
 # Tầng dữ liệu (mục 2.2, Bảng 2.5)
 DATA_DIR = PROJECT_ROOT / "data"
@@ -45,7 +42,6 @@ TESTS_DIR = PROJECT_ROOT / "tests"
 RANDOM_SEED = 42
 PS_THRESHOLD = 0.3                       # ngưỡng prediction strength (bài báo, note 21)
 POSITIVE_CLASS = "AML"                   # lớp dương khi tính sensitivity/specificity
-NEGATIVE_CLASS = "ALL"
 
 # Bảng màu ALL/AML (style guide, Bảng 4.1): an toàn với người mù màu
 PALETTE = {"ALL": "#0072B2", "AML": "#E69F00"}
@@ -57,9 +53,9 @@ VALID_TISSUE = {"BM", "PB"}
 VALID_SOURCE = {"DFCI", "CALGB", "CCG", "St-Jude"}
 VALID_SEX = {"M", "F"}  # NaN được phép (gender thiếu trong metadata gốc)
 
-# Số lần hoán vị nhãn của thí nghiệm selection bias (mục 3.5.2). Số fold, số lần lặp CV và
-# seed KHÔNG khai ở đây mà đọc từ config/experiment_config.yaml (của TV1) để chỉ có một nguồn.
-N_PERMS_EVAL = 100
+# Khóa thí nghiệm (mục 3.5): giảm số lần lặp khi chạy thử
+N_PERMS_EVAL = 100       # số lần hoán vị selection bias
+CV_REPEATS = 10          # số lần lặp repeated stratified CV
 
 
 def ensure_dirs() -> None:
