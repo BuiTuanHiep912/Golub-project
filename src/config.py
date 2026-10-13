@@ -1,22 +1,74 @@
-"""Cấu hình dùng chung cho cả project (TV2 phụ trách)."""
+"""
+TV2 - src/config.py (mục 2.2 kiến trúc lưu trữ theo tầng, Bảng 2.5/2.6).
+
+Gốc đường dẫn là thư mục repo `golub-project` (chứa src/, data/, results/, docs/).
+Cách dùng chung cho mọi module:
+
+    from src.config import DATA_DIR, RAW_DIR, STD_DIR, ...
+
+Khi chạy trực tiếp một module (`python src/load.py`) thì `src` chưa nằm trên
+sys.path, nên các module dùng try/except:
+
+    try:
+        from src.config import ...
+    except ModuleNotFoundError:
+        from config import ...
+"""
+from __future__ import annotations
+
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-DATA = ROOT / "data"
-RAW, STANDARDIZED, CLEANSED, CURATED = (DATA / p for p in ["raw", "standardized", "cleansed", "curated"])
-RESULTS = ROOT / "results"
-FIGURES_REPORT = RESULTS / "figures" / "report"
-FIGURES_SLIDES = RESULTS / "figures" / "slides"
-METRICS = RESULTS / "metrics"
-GENE_LISTS = RESULTS / "gene_lists"
-EXPERIMENT_CONFIG = ROOT / "config" / "experiment_config.yaml"
+PROJECT_ROOT = Path(__file__).resolve().parents[1]  # src/ -> golub-project
 
-SEED = 42
+# Tầng dữ liệu (mục 2.2, Bảng 2.5)
+DATA_DIR = PROJECT_ROOT / "data"
+RAW_DIR = DATA_DIR / "raw"                      # Tầng 1: dữ liệu gốc, không sửa
+KAGGLE_DIR = RAW_DIR / "kaggle"                 # 3 file Kaggle
+OPEN_INTRO_DIR = RAW_DIR / "openintro"          # metadata 6 cột mô tả
+STD_DIR = DATA_DIR / "standardized"             # Tầng 2: cùng cấu trúc, chưa kiểm tra
+CLEANSED_DIR = DATA_DIR / "cleansed"            # Tầng 3: đã kiểm tra chất lượng
+CURATED_DIR = DATA_DIR / "curated"              # Tầng 4: sẵn sàng phân tích (TV3)
+SANDBOX_DIR = DATA_DIR / "sandbox"              # Tầng 5: nháp từng người
 
-# Bảng màu an toàn với người mù màu (Okabe–Ito); dùng thống nhất trong mọi hình
-CLASS_COLORS = {"ALL": "#0072B2", "AML": "#E69F00"}
-CLASS_MARKERS = {"ALL": "o", "AML": "^"}
+# Các thư mục còn lại (Bảng 2.6)
+CONFIG_DIR = PROJECT_ROOT / "config"
+RESULTS_DIR = PROJECT_ROOT / "results"
+FIG_DIR = RESULTS_DIR / "figures"
+REPORT_FIG_DIR = FIG_DIR / "report"
+SLIDE_FIG_DIR = FIG_DIR / "slides"
+METRICS_DIR = RESULTS_DIR / "metrics"
+GENE_LISTS_DIR = RESULTS_DIR / "gene_lists"
+DOCS_DIR = PROJECT_ROOT / "docs"
+TESTS_DIR = PROJECT_ROOT / "tests"
 
-# Tiền xử lý theo Dudoit et al. (2002)
-THRESHOLD_MIN, THRESHOLD_MAX = 100, 16000
-FILTER_FOLD, FILTER_DIFF = 5, 500
+# Hằng số chung
+RANDOM_SEED = 42
+PS_THRESHOLD = 0.3                       # ngưỡng prediction strength (bài báo, note 21)
+POSITIVE_CLASS = "AML"                   # lớp dương khi tính sensitivity/specificity
+NEGATIVE_CLASS = "ALL"
+
+# Bảng màu ALL/AML (style guide, Bảng 4.1): an toàn với người mù màu
+PALETTE = {"ALL": "#0072B2", "AML": "#E69F00"}
+POS_NEG = {"negative": "#0072B2", "positive": "#E69F00"}
+
+# Danh mục giá trị hợp lệ (dùng cho kiểm tra value-set, mục 2.5)
+VALID_SUBTYPE = {"ALL": {"B-ALL", "T-ALL"}, "AML": {"AML"}}
+VALID_TISSUE = {"BM", "PB"}
+VALID_SOURCE = {"DFCI", "CALGB", "CCG", "St-Jude"}
+VALID_SEX = {"M", "F"}  # NaN được phép (gender thiếu trong metadata gốc)
+
+# Số lần hoán vị nhãn của thí nghiệm selection bias (mục 3.5.2). Số fold, số lần lặp CV và
+# seed KHÔNG khai ở đây mà đọc từ config/experiment_config.yaml (của TV1) để chỉ có một nguồn.
+N_PERMS_EVAL = 100
+
+
+def ensure_dirs() -> None:
+    """Tạo các thư mục dữ liệu/kết quả nếu chưa có."""
+    for d in (RAW_DIR, KAGGLE_DIR, OPEN_INTRO_DIR, STD_DIR, CLEANSED_DIR,
+              SANDBOX_DIR, METRICS_DIR, REPORT_FIG_DIR, SLIDE_FIG_DIR, GENE_LISTS_DIR):
+        d.mkdir(parents=True, exist_ok=True)
+
+
+if __name__ == "__main__":
+    for name in ("DATA_DIR", "RAW_DIR", "STD_DIR", "CURATED_DIR", "RESULTS_DIR"):
+        print(f"{name:<12} = {globals()[name]}")
