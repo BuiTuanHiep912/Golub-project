@@ -79,6 +79,17 @@ z = −4.7). Lý do từng mẫu ghi trong `quality_report.md`; **không xóa m�
    cho EDA**, không dùng làm đầu vào mô hình (tránh selection bias, xem mục 2.6 của kế hoạch).
 4. Chuẩn hóa từng gen (mean 0, sd 1) phải nằm **trong** `Pipeline` của từng fold CV.
 
+Sinh bằng `python -m src.preprocess`. File trong `data/curated/`:
+
+| File | Kích thước | Nội dung |
+|---|---|---|
+| `X_log10.parquet` | 72 × 7129 | float, khoảng [2.0, 4.204]; index = `sample_id` |
+| `X_log10_filtered.parquet` | 72 × 3571 | lọc trên 72 mẫu, chỉ cho EDA |
+| `samples.parquet` | 72 × 7 | bản sao bảng mẫu tầng cleansed (có `qc_outlier`) |
+| `preprocess_params.json` | — | ngưỡng, tham số lọc, số gen còn lại (3571 trên 72 mẫu; 3052 trên 38 train) |
+
+Bước 3–4 cho mô hình: `src.preprocess.make_preprocess()` = `GeneFilter()` → `StandardScaler()`.
+
 ## 5. Tham khảo
 
 - Golub et al. (1999), *Science* 286:531–537 — bảng mẫu và ngưỡng prediction strength.
