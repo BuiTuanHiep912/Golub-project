@@ -4,23 +4,67 @@ Mini project: phân loại bạch cầu cấp ALL/AML từ dữ liệu biểu hi
 72 mẫu × 7129 probe (p >> n). Chi tiết: xem tài liệu kế hoạch triển khai.
 
 ## Cài đặt
+
+### Bước 1. Lấy code về máy
 ```bash
 git clone https://github.com/BuiTuanHiep912/Golub-project.git
-cd golub-project
-conda env create -f environment.yml && conda activate golub
-# hoặc: python -m venv .venv && pip install -r requirements.txt
+cd Golub-project
 ```
+
+### Bước 2. Tạo môi trường Python (Python 3.11, chọn một trong hai cách)
+
+**Cách A — conda** (đúng phiên bản đã cố định trong `environment.yml`):
+```bash
+conda env create -f environment.yml
+conda activate golub
+```
+
+**Cách B — venv + pip** (không cần cài conda):
+```bash
+python3.11 -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+```
+Khi đã kích hoạt, đầu dòng terminal hiện `(golub)` hoặc `(.venv)`. Mọi lệnh bên dưới chạy trong môi trường này.
+Trong PyCharm/VS Code: chọn interpreter là Python của môi trường trên (với venv: `.venv/bin/python`).
 
 ## Dữ liệu
-Dữ liệu không nằm trên Git; mỗi người tự tạo trên máy mình bằng một lệnh:
-```bash
-make fetch data                    # Windows: python run_all.py fetch data
-```
-- `fetch`: tải 3 file Kaggle "Gene expression dataset (Golub et al.)" và `golub.csv` của OpenIntro
-  vào `data/raw/`, đối chiếu MD5 với `data/raw/SOURCES.md` (file đã có và đúng MD5 thì bỏ qua).
-- `data`: ghép → kiểm tra chất lượng → tiền xử lý → test, sinh `data/standardized/`, `data/cleansed/`, `data/curated/`.
 
-Nếu `fetch` báo MD5 không khớp: nguồn đã đổi bản — báo nhóm, không tự sửa `SOURCES.md`.
+Dữ liệu **không nằm trên Git** (tạo lại được, và không sửa tay). Mỗi người tự tạo trên máy mình:
+
+### Bước 3. Tải dữ liệu gốc và sinh các tầng dữ liệu
+```bash
+make fetch data                    # Windows (không có make): python run_all.py fetch data
+```
+Mất khoảng 1 phút, cần mạng; không cần tài khoản Kaggle.
+
+| Bước | Làm gì | Kết quả |
+|---|---|---|
+| `fetch` | Tải 3 file Kaggle *Gene expression dataset (Golub et al.)* và `golub.csv` của OpenIntro, đối chiếu MD5 với `data/raw/SOURCES.md`. File đã có và đúng MD5 thì bỏ qua | `data/raw/kaggle/`, `data/raw/openintro/` |
+| `data` | Ghép 3 nguồn → kiểm tra chất lượng → tiền xử lý (threshold, log10) → chạy test | `data/standardized/`, `data/cleansed/`, `data/curated/` |
+
+Chạy xong đúng khi thấy `Kết luận: ĐẠT` và dòng cuối `... passed` (không có `failed`).
+
+### Bước 4. Đọc dữ liệu trong code / notebook
+Luôn đọc qua `load_golub()`, không tự đọc file parquet:
+```python
+from src.load import load_golub
+
+X, samples = load_golub("curated")   # đầu vào cho mô hình: 72 x 7129, đã threshold + log10
+X, samples = load_golub("cleansed")  # giá trị gốc đã kiểm tra chất lượng (có cột qc_outlier)
+```
+`X`: mỗi hàng là một bệnh nhân (`sample_id` 1–72), mỗi cột là một probe.
+`samples`: `split` (train/test), `class` (ALL/AML), `subtype`, `tissue`, `source`, `sex`.
+Mô tả đầy đủ từng tầng và từng cột: `docs/data_dictionary.md`. Báo cáo chất lượng: `data/cleansed/quality_report.md`.
+
+### Gặp lỗi?
+| Thông báo | Cách xử lý |
+|---|---|
+| `make: command not found` (Windows) | Dùng `python run_all.py fetch data` |
+| `ModuleNotFoundError: No module named 'pandas'` | Chưa kích hoạt môi trường ở Bước 2 (`conda activate golub` hoặc `source .venv/bin/activate`) |
+| `MD5 không khớp SOURCES.md` | Nguồn dữ liệu đã đổi bản. Báo nhóm, **không** tự sửa `SOURCES.md` |
+| Lỗi mạng khi tải | Chạy lại `make fetch` (file đã tải đúng sẽ được bỏ qua). Nếu vẫn lỗi, tải tay theo đường dẫn trong `data/raw/SOURCES.md` vào đúng thư mục rồi chạy `make fetch` để kiểm MD5 |
+| `Tầng curated chưa có ...` | Chưa chạy Bước 3, hoặc chạy chưa hết — chạy lại `make data` |
 
 ## Cấu trúc
 | Thư mục | Nội dung |
