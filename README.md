@@ -12,10 +12,15 @@ conda env create -f environment.yml && conda activate golub
 ```
 
 ## Dữ liệu
-1. Tải 3 file từ Kaggle "Gene expression dataset (Golub et al.)" vào `data/raw/kaggle/`
-2. Tải `golub.csv` từ OpenIntro vào `data/raw/openintro/`
-3. Ghi ngày tải và MD5 vào `data/raw/SOURCES.md`
-4. Chạy `make data` (Windows: `python run_all.py data`)
+Dữ liệu không nằm trên Git; mỗi người tự tạo trên máy mình bằng một lệnh:
+```bash
+make fetch data                    # Windows: python run_all.py fetch data
+```
+- `fetch`: tải 3 file Kaggle "Gene expression dataset (Golub et al.)" và `golub.csv` của OpenIntro
+  vào `data/raw/`, đối chiếu MD5 với `data/raw/SOURCES.md` (file đã có và đúng MD5 thì bỏ qua).
+- `data`: ghép → kiểm tra chất lượng → tiền xử lý → test, sinh `data/standardized/`, `data/cleansed/`, `data/curated/`.
+
+Nếu `fetch` báo MD5 không khớp: nguồn đã đổi bản — báo nhóm, không tự sửa `SOURCES.md`.
 
 ## Cấu trúc
 | Thư mục | Nội dung |
