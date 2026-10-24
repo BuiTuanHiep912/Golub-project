@@ -1,6 +1,8 @@
 # Chạy các bước của pipeline. Trên Windows có thể dùng: python run_all.py
 PY ?= python3
 
+fetch:         ## tải dữ liệu gốc vào raw/, đối chiếu MD5 với SOURCES.md
+	$(PY) -m src.fetch
 standardize:   ## raw/ -> standardized/
 	$(PY) -m src.load
 quality:       ## standardized/ -> cleansed/ + quality_report.md
@@ -19,4 +21,4 @@ figures:       ## vẽ lại toàn bộ F1–F12
 	$(PY) -m src.viz
 
 all: data experiments evaluate figures
-.PHONY: standardize quality curate test data experiments evaluate figures all
+.PHONY: fetch standardize quality curate test data experiments evaluate figures all
