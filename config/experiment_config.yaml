@@ -1,10 +1,41 @@
-# Cấu hình thí nghiệm giai thừa — bản nháp, TV1 hoàn thiện ở công việc 1.3
+# =============================================================================
+# Cấu hình thí nghiệm giai thừa (factorial design) – kế hoạch mục 1.5.2, Bảng 1.4
+# Người viết: TV1 (công việc 1.3). Người đọc: TV2 (evaluate.py), TV3 (models.py), TV4 (features.py)
+#
+# Mỗi cấu hình = 1 phương pháp chọn gen × 1 giá trị k × 1 bộ phân loại
+#   -> 6 × 6 × 7 = 252 cấu hình; mỗi cấu hình là một hàng trong results/metrics/runs.parquet
+# Code phải đọc tham số từ file này, KHÔNG ghi cứng trong code.
+# Đổi file này = đổi thiết kế thí nghiệm -> ghi lý do vào docs/decisions.md.
+# =============================================================================
+
+# Nhân tố A – phương pháp chọn gen (TV4, src/features.py: make_selector(tên, k))
+#   snr: signal-to-noise của Golub | ttest: t-test + FDR | lasso, enet: hồi quy phạt L1 / Elastic Net
+#   rf: độ quan trọng Random Forest | svm_rfe: loại bỏ đệ quy bằng SVM tuyến tính
 selection:   [snr, ttest, lasso, enet, rf, svm_rfe]
+
+# Nhân tố B – số gen giữ lại sau khi chọn (H2: 10–50 gen có đủ không?)
+#   Thang gần log để phủ từ rất ít đến nhiều gen; 50 = số gen Golub dùng.
+#   Lưu ý golub_wv: Golub lấy k/2 gen mỗi lớp -> k lẻ (k = 5) cần quy tắc làm tròn (TV1 chốt ở 2.1).
 k:           [5, 10, 20, 50, 100, 200]
+
+# Nhân tố C – bộ phân loại (TV3, src/models.py; golub_wv của TV1, src/golub_wv.py)
 classifiers: [golub_wv, dlda, knn, logreg_l1, logreg_l2, svm_linear, rf]
+
+# Sơ đồ nested CV dùng để so sánh 252 cấu hình (TV2, src/evaluate.py)
 cv:
-  outer_folds: 5
-  outer_repeats: 10
-  inner_folds: 5
-  stratified: true
+  outer_folds: 5       # vòng ngoài: ước lượng hiệu năng (mỗi fold test ~14–15 mẫu trên 72)
+  outer_repeats: 10    # số lần lặp vòng ngoài, PHẢI bằng số phần tử của `seeds`
+                       # (evaluate.py lặp theo `seeds`, mỗi seed = một lần chia fold mới)
+  inner_folds: 5       # vòng trong: chọn siêu tham số, chỉ dùng dữ liệu train của fold ngoài
+  stratified: true     # blocking: mọi fold giữ tỷ lệ ALL/AML ~ 65/35
+
+# Randomization + replication: mỗi seed cố định cách chia fold và random_state của mô hình.
+# Báo cáo kết quả = trung bình ± độ lệch chuẩn qua 10 seed.
 seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+
+# Nhân tố D (cách đánh giá: original_split, loocv, nested_cv, wrong_cv) không khai ở đây:
+# là tham số `scheme` của evaluate(). Ghi chú thiết kế mẫu từ 1.3 (notebooks/02_design_batch):
+#   - Train: lớp ≡ tuổi ≡ nguồn (ALL = trẻ em = DFCI, AML = người lớn = CALGB) -> nên báo cáo
+#     riêng kết quả test trên AML trẻ em (St-Jude + CCG, n = 10), St-Jude (n = 8), PB (n = 10).
+#   - H6: không có batch effect rõ ràng trên PC1–PC3 sau khi cố định lớp -> không thêm bước
+#     hiệu chỉnh batch vào pipeline.
