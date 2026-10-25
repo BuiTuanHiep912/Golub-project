@@ -1,0 +1,51 @@
+phía,gen Golub,probe tốt nhất,rank của nhóm,kết quả
+ALL,C-myb,U22376_cds2_s_at,6.0,trùng
+ALL,Proteasome iota,X59417_at,106.0,không trùng
+ALL,MB-1,U05259_rna1_at,44.0,trùng
+ALL,Cyclin D3,M92287_at,55.0,trùng
+ALL,Myosin light chain,,,không xác định duy nhất
+ALL,RbAp48,X74262_at,13.0,trùng
+ALL,SNF2 (1),U29175_at,59.0,trùng
+ALL,HkrT-1,,,không xác định duy nhất
+ALL,E2A,M31523_at,11.0,trùng
+ALL,Inducible protein,L47738_at,21.0,trùng
+ALL,Dynein light chain,U32944_at,76.0,không trùng
+ALL,Topoisomerase II beta,Z15115_at,34.0,trùng
+ALL,IRF2,X15949_at,20.0,trùng
+ALL,TFIIEbeta,X63469_at,90.0,không trùng
+ALL,Acyl-CoA dehydrogenase,M91432_at,41.0,trùng
+ALL,SNF2 (2),,,không xác định duy nhất
+ALL,ATPase,,,không xác định duy nhất
+ALL,SRP9,U20998_at,99.0,không trùng
+ALL,MCM3,D38073_at,68.0,không trùng
+ALL,Deoxyhypusine synthase,U26266_s_at,67.0,không trùng
+ALL,Op18,M31303_rna1_at,75.0,không trùng
+ALL,Rabaptin-5,Y08612_at,150.0,không trùng
+ALL,Heterochromatin p25,U35451_at,240.0,không trùng
+ALL,IL-7 receptor,M29696_at,113.0,không trùng
+ALL,Adenosine deaminase,M13792_at,91.0,không trùng
+AML,Fumarylacetoacetate,M55150_at,10.0,trùng
+AML,Zyxin,X95735_at,2.0,trùng
+AML,LTC4 synthase,U50136_rna1_at,3.0,trùng
+AML,LYN,M16038_at,12.0,trùng
+AML,HoxA9,U82759_at,22.0,trùng
+AML,CD33,M23197_at,4.0,trùng
+AML,Adipsin,M84526_at,5.0,trùng
+AML,Leptin receptor,Y12670_at,9.0,trùng
+AML,Cystatin C,M27891_at,1.0,trùng
+AML,Proteoglycan 1,X17042_at,42.0,không trùng
+AML,IL-8 precursor,,,không xác định duy nhất
+AML,Azurocidin,M96326_rna1_at,35.0,trùng
+AML,p62,,,không xác định duy nhất
+AML,CyP3,,,không xác định duy nhất
+AML,MCL1,L08246_at,47.0,không trùng
+AML,ATPase,,,không xác định duy nhất
+AML,IL-8,,,không xác định duy nhất
+AML,Cathepsin D,M63138_at,31.0,trùng
+AML,Lectin,,,không xác định duy nhất
+AML,MAD-3,M69043_at,102.0,không trùng
+AML,CD11c,M81695_s_at,74.0,không trùng
+AML,Ebp72,,,không xác định duy nhất
+AML,Lysozyme,M19045_f_at,49.0,không trùng
+AML,Properdin,M83652_s_at,40.0,không trùng
+AML,Catalase,X04085_rna1_at,38.0,trùng
