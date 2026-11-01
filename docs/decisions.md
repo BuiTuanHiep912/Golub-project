@@ -99,6 +99,17 @@ tái lập được và truy ngược về nguồn.
   `experiment_config.yaml` giữ nguyên giá trị, thêm chú thích và `tests/test_experiment_config.py`
   (`outer_repeats` phải bằng số seed vì `evaluate.py` lặp theo `seeds`).
 
+## ADR-011 — Style guide và `src/viz.py` (công việc 1.4)
+- **Ngày:** 28/10/2026 · **Người quyết định:** TV6
+- **Quyết định:** màu/hình dạng/cỡ chữ nằm ở `src/viz.py` (nguồn duy nhất) và mô tả trong `docs/style_guide.md`. Báo cáo: chữ ≥ 10 pt, hình rộng 6,5 in, 300 dpi; slide: chữ ≥ 16 pt, 12 in, 150 dpi.
+  Phải vẽ ở **kích thước in thật** (hình 11 in thu về 6,5 in làm chữ 10 pt thành ~6 pt).
+- **Màu:** Okabe–Ito. ALL `#0072B2` tròn, AML `#E69F00` tam giác (đúng `src.config.PALETTE`); T-ALL `#332288` vuông; nguồn mẫu và loại mô giữ màu TV1 đã dùng ở F4d.
+- **Hình của 1.4:** F2, F2b, F3, F4a (scree), F4b (PCA theo lớp và nhóm con), F4c (PCA/t-SNE/UMAP), F4e (tương quan giữa mẫu). **F04d giữ nguyên là hình batch effect của TV1**; `viz.py` không vẽ lại F04d
+  và không vẽ PCA theo nguồn/loại mô (trùng việc 1.3).
+- **F2:** vẽ histogram đếm với trục y log trên giá trị MAS4 **gốc** (47% < 100, có số âm) cạnh giá trị sau threshold và log10; density thường bị cột ở sàn 100 chi phối nên không dùng.
+- **EDA dùng `X_log10_filtered`** (3 571 gen, lọc trên 72 mẫu, không dùng nhãn) và z-score từng gen; chỉ để khám phá, không để đánh giá mô hình (mục 2.6).
+- **Hệ quả:** F10/F11 (TV2) và F01/F04d (TV1) chưa theo style guide (màu, cỡ chữ, kích thước); chuyển sang `viz.py` ở công việc 2.6 (xem ADR-009).
+
 ## Nhật ký nhanh (mục 5.2 kế hoạch)
 
 | Ngày | Quyết định | Lý do | Người quyết định |
@@ -111,3 +122,4 @@ tái lập được và truy ngược về nguồn.
 | 06/10/2026 | `evaluate.py` bản 1: 4 sơ đồ, Wilson, McNemar, selection bias; thêm khóa `predictions` | ADR-008 | TV2 |
 | 07/10/2026 | `make evaluate` sinh thêm hình F10/F11 (bản 1) và `notebooks/08_evaluation.ipynb`; 100 lần hoán vị xác nhận H3 (CV đúng 0.50 vs CV sai 0.81) | ADR-009 | TV2 |
 | 25/10/2026 | 1.3: H6 kiểm định trong từng lớp (0/15 có ý nghĩa sau BH), không hiệu chỉnh batch; chú thích + test cho `experiment_config.yaml` | ADR-010 | TV1 |
+| 28/10/2026 | 1.4: `src/viz.py` (F2, F2b, F3, F4a–c, F4e), `style_guide.md`, `notebooks/01_eda.ipynb`, `tests/test_viz.py`; F04d giữ nguyên của TV1 | ADR-011 | TV6 |

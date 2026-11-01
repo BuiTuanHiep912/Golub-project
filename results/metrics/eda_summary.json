@@ -1,0 +1,81 @@
+{
+  "n_samples": 72,
+  "n_probes": 7129,
+  "n_genes_filtered": 3571,
+  "class_counts": {
+    "ALL": 47,
+    "AML": 25
+  },
+  "measurement_range": {
+    "frac_below_100": 0.47021749972724863,
+    "frac_negative": 0.2867279188291953,
+    "frac_above_16000": 0.008297486011751688,
+    "min": -28400.0,
+    "max": 71369.0
+  },
+  "skewness": {
+    "skew_median_gene_before": 2.0343375531153396,
+    "skew_median_gene_after": 0.7520378897631188,
+    "kurtosis_median_gene_before": 4.887564536532977,
+    "kurtosis_median_gene_after": 0.8009852476079424,
+    "skew_pooled_before": 6.020785000879168,
+    "skew_pooled_after": 1.5002972726984447
+  },
+  "gene_filter": {
+    "n_kept": 3571,
+    "n_removed": 3558,
+    "sd_log10_median_kept": 0.24428207280404082,
+    "sd_log10_median_removed": 0.0678214125620023
+  },
+  "pca": {
+    "explained_ratio": [
+      0.16064237025277833,
+      0.11434242052234934,
+      0.05952674681707568,
+      0.04696726997721312,
+      0.0384352680583473,
+      0.031621249740018564,
+      0.02631374803297359,
+      0.024521221305267064,
+      0.02132968060518297,
+      0.020178674182550958
+    ],
+    "cumulative_pc1_pc2": 0.27498479077512766,
+    "cumulative_pc1_pc3": 0.33451153759220337,
+    "pcs_to_reach_50pct": 8,
+    "pcs_to_reach_80pct": 34,
+    "class_separation_by_pc": [
+      {
+        "PC": "PC1",
+        "auc": 0.5753,
+        "p_mannwhitney": 0.29793984677585006
+      },
+      {
+        "PC": "PC2",
+        "auc": 0.8911,
+        "p_mannwhitney": 5.665836769995472e-08
+      },
+      {
+        "PC": "PC3",
+        "auc": 0.8502,
+        "p_mannwhitney": 1.166196162471176e-06
+      },
+      {
+        "PC": "PC4",
+        "auc": 0.6349,
+        "p_mannwhitney": 0.061647937198808705
+      },
+      {
+        "PC": "PC5",
+        "auc": 0.5506,
+        "p_mannwhitney": 0.4852708167952977
+      }
+    ],
+    "silhouette_class_pc1_pc2": 0.13961808242648524,
+    "silhouette_subtype_pc1_pc2": -0.02277749622885767
+  },
+  "qc_outlier_samples": [
+    21
+  ],
+  "median_based_outlier_samples": []
+}
