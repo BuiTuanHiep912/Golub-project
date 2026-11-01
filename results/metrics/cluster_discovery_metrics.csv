@@ -1,9 +1,10 @@
 method,k,ARI_vs_class,ARI_vs_subtype,silhouette,notes
-K-Means,2,0.9386 ± 0.0163,-,0.0954 ± 0.0005,Stability evaluated across 10 random seeds
-K-Means,4,-,0.4260 ± 0.1074,0.0776 ± 0.0045,Stability evaluated across 10 random seeds
-"Hierarchical (1-r, average)",2,-0.0129,-,0.2822,Single sample (21) chained into cluster 1
-"Hierarchical (1-r, average)",4,-,0.3845,0.1296,Small singleton clusters due to average linkage
-"Hierarchical (1-r, complete)",2,0.6900,-,0.1483,Balanced clusters avoiding chaining
-"Hierarchical (1-r, complete)",4,-,0.4040,0.1054,Effective subtyping separation
-SOM (1x2 grid),2,0.4714 ± 0.3160,-,-,Reproduces Golub 1999 SOM architecture
-SOM (2x2 grid),4,-,0.3720 ± 0.0940,-,Subtype clustering on 2x2 topology
+K-Means,2,0.9386 ± 0.0163,-,0.0954 ± 0.0005,72 mẫu; 10 seed
+K-Means,4,-,0.4260 ± 0.1074,0.0776 ± 0.0045,72 mẫu; 10 seed
+"Hierarchical (1-r, average)",2,-0.0129,-,0.2822,"72 mẫu; tất định; cỡ cụm [71, 1]"
+"Hierarchical (1-r, average)",4,-,0.3845,0.1296,"72 mẫu; tất định; cỡ cụm [49, 21, 1, 1]"
+"Hierarchical (1-r, complete)",2,0.6900,-,0.1483,"72 mẫu; tất định; cỡ cụm [31, 41]"
+"Hierarchical (1-r, complete)",4,-,0.4040,0.1054,"72 mẫu; tất định; cỡ cụm [22, 40, 9, 1]"
+SOM (1x2 grid),2,0.5939 ± 0.3835,-,-,38 mẫu train; 10 seed; bài báo ARI ≈ 0.609
+SOM (1x2 grid),2,0.4947 ± 0.2870,-,-,72 mẫu; 10 seed
+SOM (2x2 grid),4,-,0.3720 ± 0.0940,-,72 mẫu; 10 seed
