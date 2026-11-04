@@ -1,0 +1,15 @@
+testcase13 — evaluate loocv: gộp dự đoán 38 fold thành một dòng
+===============================================================
+
+MỤC ĐÍCH
+    LOOCV đúng cách trên 38 mẫu train (kế hoạch §3.5.1, mục 2; note 22 của bài báo).
+
+ĐẦU VÀO
+    Như testcase12, scheme = loocv.
+
+KỲ VỌNG
+    Một dòng 'pooled' với n_test = 38, AUC xác định (1.0), SD = null.
+
+VÌ SAO QUAN TRỌNG
+    Bản làm việc cũ lấy trung bình chỉ số theo từng fold 1 mẫu và ra 0.395 ± 0.489,
+    một con số vô nghĩa.

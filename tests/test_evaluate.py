@@ -15,7 +15,9 @@ from sklearn.preprocessing import StandardScaler
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.evaluate import evaluate, mcnemar_test, wilson_ci  # noqa: E402
+from src.evaluate import (  # noqa: E402
+    _experiment_config, _nested_param_grid, confusion_counts, evaluate, mcnemar_test, wilson_ci,
+)
 
 PLAN_KEYS = ["bal_acc_mean", "bal_acc_sd", "auc_mean", "per_fold", "config", "predictions"]
 
@@ -135,3 +137,90 @@ def test_wrong_cv_requires_a_selection_step():
     no_select = Pipeline([("scale", StandardScaler()), ("clf", LogisticRegression())])
     with pytest.raises(ValueError, match="bước chọn gen"):
         evaluate(no_select, X, y, "wrong_cv", seeds=[0])
+
+
+def _test_labels() -> pd.Series:
+    """Nhãn thật của 34 mẫu test (sample_id 39..72) như cột y_true của evaluate()["predictions"]."""
+    return pd.Series(["ALL"] * 20 + ["AML"] * 14, index=pd.Index(range(39, 73), name="sample_id"))
+
+
+def test_mcnemar_aligns_predictions_by_sample_id():
+    # ROOT CAUSE:
+    #
+    # mcnemar_test() đưa cả ba đầu vào qua np.asarray, tức bỏ chỉ mục sample_id rồi so theo VỊ
+    # TRÍ. Dự đoán của hai mô hình thường lấy từ hai lần chạy hoặc hai file (vd. predictions_test.csv
+    # của TV3) nên thứ tự dòng có thể khác: hai mô hình cùng đúng 34/34 nhưng một bên xếp ngược
+    # thì hàm báo B chỉ đúng 6/34 và p = 0.0.
+    #
+    # Sửa bằng cách xếp pred_a/pred_b theo chỉ mục của y_true khi chúng là Series.
+    y = _test_labels()
+    b = y.sort_index(ascending=False)          # cùng dự đoán, chỉ khác thứ tự dòng
+
+    res = mcnemar_test(y, y.copy(), b)
+
+    assert res["b_correct"] == 34
+    assert res["p_value"] == 1.0
+
+
+def test_mcnemar_rejects_predictions_from_another_test_set():
+    y = _test_labels()
+    with pytest.raises(ValueError, match="sample_id"):
+        mcnemar_test(y, y, y.drop(72))
+    with pytest.raises(ValueError, match="cùng số mẫu"):
+        mcnemar_test(list(y), list(y), list(y)[:-1])
+
+
+def test_confusion_counts_keeps_uncertain_predictions():
+    # ROOT CAUSE:
+    #
+    # plot_roc_cm() gọi confusion_matrix(t, p, labels=[0, 1]), nên dự đoán "uncertain" (mã -1, có ở
+    # weighted voting của TV1) bị bỏ mà không báo: 2 mẫu "uncertain" thì ma trận F11 chỉ cộng ra
+    # 32/34.
+    #
+    # Sửa bằng confusion_counts(): thêm cột "uncertain" khi có, để tổng luôn bằng số mẫu.
+    y = list(_test_labels())
+    pred = list(y)
+    pred[0], pred[25] = "uncertain", "uncertain"   # một mẫu ALL, một mẫu AML
+
+    cm = confusion_counts(y, pred)
+
+    assert int(cm.to_numpy().sum()) == 34
+    assert list(cm.columns) == ["ALL", "AML", "uncertain"]
+    assert cm.loc["ALL", "uncertain"] == 1 and cm.loc["AML", "uncertain"] == 1
+    assert cm.loc["ALL", "ALL"] == 19 and cm.loc["AML", "AML"] == 13
+
+
+def test_confusion_counts_is_2x2_when_model_is_never_uncertain():
+    y = list(_test_labels())
+    pred = list(y)
+    pred[0] = "AML"                                 # một mẫu ALL bị đoán AML
+
+    cm = confusion_counts(y, pred)
+
+    assert list(cm.columns) == ["ALL", "AML"]
+    assert cm.to_numpy().tolist() == [[19, 1], [0, 14]]
+
+
+def test_nested_param_grid_tunes_k_from_experiment_config():
+    # ROOT CAUSE:
+    #
+    # main() (và notebook 08) gọi evaluate(..., "nested_cv") không kèm param_grid, nên không có
+    # vòng trong: dòng "nested_cv" trong summary_evaluation.csv thực ra là repeated CV với k = 50,
+    # C = 1 cố định, trái mục 3.5.1 (vòng trong chọn k và siêu tham số).
+    #
+    # Sửa bằng _nested_param_grid(): k lấy từ nhân tố B của experiment_config.yaml, C theo mục 3.5.2.
+    grid = _nested_param_grid()
+
+    assert grid["select__k"] == [int(k) for k in _experiment_config()["k"]]
+    assert grid["clf__C"] == [0.01, 0.1, 1, 10]
+
+
+def test_nested_cv_with_param_grid_runs_an_inner_loop():
+    X, y = _data(signal=3.0)
+
+    res = evaluate(_pipe(), X, y, "nested_cv", seeds=[0], param_grid={"select__k": [5, 10], "clf__C": [0.1, 1]})
+
+    assert res["config"]["inner_folds"] == 5
+    assert res["config"]["param_grid"] == {"select__k": [5, 10], "clf__C": [0.1, 1]}
+    assert len(res["per_fold"]) == 5
+    assert res["bal_acc_mean"] > 0.9

@@ -1,0 +1,8 @@
+{
+  "n": 10,
+  "a_correct": 10,
+  "b_correct": 5,
+  "a_only_correct": 5,
+  "b_only_correct": 0,
+  "p_value": 0.0625
+}

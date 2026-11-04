@@ -1,0 +1,15 @@
+testcase1 — Wilson khi đúng hết 34/34: cận trên đúng bằng 1
+===========================================================
+
+MỤC ĐÍCH
+    Chốt đầu mút trên của khoảng Wilson khi mô hình đúng hết tập test 34 mẫu.
+
+ĐẦU VÀO
+    n_correct = 34, n = 34, alpha mặc định 0.05.
+
+KỲ VỌNG
+    [0.898485, 1.0]; cận dưới tính tay bằng công thức n/(n + z²) với z = 1.959964.
+
+VÌ SAO QUAN TRỌNG
+    statsmodels trả 0.9999999999999999 cho cận trên, khiến khoảng tin cậy không chứa chính
+    accuracy = 1; wilson_ci phải gán lại đúng 1.0.

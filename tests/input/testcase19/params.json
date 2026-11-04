@@ -1,0 +1,14 @@
+{
+  "kind": "split_at_selector",
+  "desc": "wrong_cv báo lỗi khi bước chọn gen đứng cuối pipeline",
+  "steps": [
+    [
+      "scale",
+      "scale"
+    ],
+    [
+      "select",
+      "select"
+    ]
+  ]
+}

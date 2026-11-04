@@ -1,0 +1,11 @@
+{
+  "kind": "evaluate",
+  "desc": "evaluate loocv: gộp dự đoán 38 fold thành một dòng",
+  "scheme": "loocv",
+  "data": {
+    "signal": 4.0,
+    "n_genes": 300,
+    "seed": 0
+  },
+  "k": 10
+}

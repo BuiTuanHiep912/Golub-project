@@ -125,6 +125,23 @@ tái lập được và truy ngược về nguồn.
   - Kết luận H5 đổi từ "ủng hộ mạnh" thành "ủng hộ ở mức ALL/AML, không ủng hộ ở mức B-ALL/T-ALL".
 - **Hệ quả:** xóa `F5_clustermap_{report,slide}.png` (bản trùng cũ của F05). Cập nhật `docs/report/3.2_class_discovery.md`, `docs/handover/1.5.md`.
 
+## ADR-013 — Sửa 3 lỗi của `src/evaluate.py` trước khi dùng số liệu cho báo cáo (công việc 2.4)
+- **Ngày:** 04/11/2026 · **Người quyết định:** TV2
+- **`mcnemar_test`** từng so ba đầu vào theo vị trí (bỏ chỉ mục `sample_id`): hai mô hình cùng đúng
+  34/34 nhưng một bên xếp ngược thì báo p = 0.0. Nay `pd.Series` được xếp lại theo chỉ mục của
+  `y_true`; khác tập mẫu hoặc khác độ dài thì báo lỗi.
+- **F11 / `confusion_counts`**: ma trận nhầm lẫn từng dùng `labels=[0, 1]` nên bỏ mất dự đoán
+  "uncertain" của weighted voting (2 mẫu "uncertain" thì chỉ cộng ra 32/34). Nay có thêm cột
+  "uncertain" khi mô hình trả về nó; tiêu đề lấy đúng số mẫu thay vì ghi cứng 34.
+- **Dòng `nested_cv` của `main()` và notebook 08** từng chạy không có lưới nên không lồng vòng nào
+  (repeated CV, k = 50, C = 1 cố định). Nay vòng trong (5 fold) chọn k theo nhân tố B của
+  `experiment_config.yaml` và C ∈ {0.01, 0.1, 1, 10} theo mục 3.5.2. Kết quả: 0.968 ± 0.055 (trước
+  0.960 ± 0.049); `make evaluate` lâu hơn (~4,5 phút so với ~45 giây).
+- **Không đổi:** "CV đúng" của thí nghiệm selection bias vẫn là `nested_cv` không lưới (k cố định),
+  để 200 lần chạy không nặng gấp hàng chục lần; bảng selection bias giữ nguyên từng chữ số.
+- **Kiểm thử:** 6 test hồi quy trong `tests/test_evaluate.py` + bộ golden-file 19 testcase
+  (`tests/test_golden_evaluate.py`, `tests/input|expect/`; `tests/actual/` trong `.gitignore`).
+
 ## Nhật ký nhanh (mục 5.2 kế hoạch)
 
 | Ngày | Quyết định | Lý do | Người quyết định |
@@ -139,3 +156,4 @@ tái lập được và truy ngược về nguồn.
 | 25/10/2026 | 1.3: H6 kiểm định trong từng lớp (0/15 có ý nghĩa sau BH), không hiệu chỉnh batch; chú thích + test cho `experiment_config.yaml` | ADR-010 | TV1 |
 | 28/10/2026 | 1.4: `src/viz.py` (F2, F2b, F3, F4a–c, F4e), `style_guide.md`, `notebooks/01_eda.ipynb`, `tests/test_viz.py`; F04d giữ nguyên của TV1 | ADR-011 | TV6 |
 | 01/11/2026 | 1.5: sửa bảng chéo lệch `sample_id`, SOM qua 10 seed, notebook tự sinh CSV + F05/F05b/F05c; H5 chỉ ủng hộ ở mức ALL/AML | ADR-012 | TV1 |
+| 04/11/2026 | 2.4: `mcnemar_test` ghép theo `sample_id`; F11 giữ cột "uncertain"; `nested_cv` có vòng trong chọn k, C; thêm bộ golden-file 19 testcase | ADR-013 | TV2 |

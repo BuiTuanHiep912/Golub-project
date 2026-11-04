@@ -1,0 +1,15 @@
+testcase11 — _encode: AML = 1, ALL = 0, còn lại (kể cả 'aml', ' AML') = -1
+==========================================================================
+
+MỤC ĐÍCH
+    Chốt cách mã hóa nhãn dùng cho mọi chỉ số (AML là lớp dương, kế hoạch §3.5.3).
+
+ĐẦU VÀO
+    Nhãn chuẩn, 'uncertain', và hai biến thể viết sai (chữ thường, có dấu cách).
+
+KỲ VỌNG
+    [0, 1, -1, -1, -1].
+
+VÌ SAO QUAN TRỌNG
+    Mã hóa chặt có chủ ý: nhãn viết sai không lặng lẽ thành AML/ALL mà bị evaluate()
+    chặn ngay (y chỉ được chứa ALL/AML); load.py đã chuẩn hóa chữ hoa và bỏ dấu cách.

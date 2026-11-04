@@ -1,0 +1,14 @@
+testcase15 — evaluate báo lỗi với tên sơ đồ lạ
+==============================================
+
+MỤC ĐÍCH
+    Tên sơ đồ phải đúng một trong 4 tên của kế hoạch §5.3.
+
+ĐẦU VÀO
+    scheme = 'LOOCV' (viết hoa).
+
+KỲ VỌNG
+    ValueError liệt kê 4 tên hợp lệ.
+
+VÌ SAO QUAN TRỌNG
+    Gõ sai tên mà vẫn chạy một sơ đồ mặc định thì con số báo cáo sai sơ đồ mà không ai biết.

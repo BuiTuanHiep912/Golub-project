@@ -1,0 +1,14 @@
+testcase7 — McNemar báo lỗi khi các mảng khác độ dài
+====================================================
+
+MỤC ĐÍCH
+    Đầu vào là list (không có sample_id) thì ít nhất phải cùng độ dài.
+
+ĐẦU VÀO
+    y_true và pred_a 3 phần tử, pred_b 2 phần tử.
+
+KỲ VỌNG
+    ValueError 'phải có cùng số mẫu'.
+
+VÌ SAO QUAN TRỌNG
+    Trước đây numpy báo lỗi so sánh khó hiểu hoặc phát sóng (broadcast) âm thầm.
