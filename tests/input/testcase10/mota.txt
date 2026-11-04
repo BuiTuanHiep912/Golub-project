@@ -1,0 +1,14 @@
+testcase10 — Ma trận nhầm lẫn 2×2 khi mô hình không bao giờ 'uncertain'
+=======================================================================
+
+MỤC ĐÍCH
+    Mô hình thường (logistic, SVM…) không có 'uncertain' thì giữ ma trận 2×2.
+
+ĐẦU VÀO
+    34 mẫu test; một mẫu ALL bị đoán AML.
+
+KỲ VỌNG
+    [[19, 1], [0, 14]], không có cột 'uncertain'.
+
+VÌ SAO QUAN TRỌNG
+    Không được thêm một cột toàn số 0 làm rối hình F11 của các mô hình khác.

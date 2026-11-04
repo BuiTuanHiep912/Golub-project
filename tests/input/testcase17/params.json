@@ -1,0 +1,18 @@
+{
+  "kind": "split_at_selector",
+  "desc": "wrong_cv nhận bộ chọn kế thừa SelectorMixin dù không tên 'select'",
+  "steps": [
+    [
+      "scale",
+      "scale"
+    ],
+    [
+      "fs",
+      "select"
+    ],
+    [
+      "clf",
+      "clf"
+    ]
+  ]
+}

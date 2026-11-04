@@ -1,0 +1,15 @@
+testcase12 — evaluate original_split: train 38, test 34, đủ 6 khóa
+==================================================================
+
+MỤC ĐÍCH
+    Sơ đồ tách gốc 38/34 của bài báo (kế hoạch §3.5.1, mục 1).
+
+ĐẦU VÀO
+    Dữ liệu tổng hợp tách được hoàn toàn (signal 4.0); split đúng Bảng 2.4.
+
+KỲ VỌNG
+    Một dòng per_fold với 34 mẫu test; dự đoán đúng các mẫu 39..72; SD = null.
+
+VÌ SAO QUAN TRỌNG
+    Kiểm 5 khóa của demo nghiệm thu §5.3 + khóa predictions (ADR-008), và mô hình chỉ
+    được kiểm trên 34 mẫu test.

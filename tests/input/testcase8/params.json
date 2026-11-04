@@ -1,0 +1,16 @@
+{
+  "kind": "mcnemar",
+  "desc": "McNemar tính 'uncertain' là đoán sai",
+  "y_true": [
+    "ALL",
+    "AML"
+  ],
+  "pred_a": [
+    "ALL",
+    "AML"
+  ],
+  "pred_b": [
+    "ALL",
+    "uncertain"
+  ]
+}

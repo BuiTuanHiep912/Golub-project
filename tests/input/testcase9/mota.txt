@@ -1,0 +1,15 @@
+testcase9 — Ma trận nhầm lẫn giữ cột 'uncertain' (hồi quy)
+==========================================================
+
+MỤC ĐÍCH
+    Hồi quy cho lỗi F11 bỏ mẫu 'uncertain' khỏi ma trận nhầm lẫn.
+
+ĐẦU VÀO
+    34 mẫu test; mẫu ALL đầu tiên và một mẫu AML được đoán 'uncertain'.
+
+KỲ VỌNG
+    Ma trận 2×3, tổng đúng 34, cột 'uncertain' có 1 ALL và 1 AML.
+
+VÌ SAO QUAN TRỌNG
+    Bản cũ dùng labels=[0, 1] nên ma trận chỉ cộng ra 32/34; F11 của mô hình weighted
+    voting sẽ giấu đúng những mẫu bác sĩ cần chú ý nhất.

@@ -1,0 +1,14 @@
+testcase4 — McNemar chính xác: B sai 5 mẫu mà A đúng
+====================================================
+
+MỤC ĐÍCH
+    Chốt bản McNemar chính xác (nhị thức, exact=True) trên một bảng nhỏ.
+
+ĐẦU VÀO
+    10 mẫu: A đúng cả 10; B đoán AML cho mẫu ALL đầu tiên và ALL cho cả 4 mẫu AML.
+
+KỲ VỌNG
+    5 cặp lệch đều nghiêng về A -> p = 2 × 0.5^5 = 0.0625.
+
+VÌ SAO QUAN TRỌNG
+    Với 34 mẫu test số cặp lệch rất nhỏ; xấp xỉ chi bình phương sẽ cho p sai.

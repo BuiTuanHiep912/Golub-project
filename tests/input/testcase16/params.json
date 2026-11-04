@@ -1,0 +1,18 @@
+{
+  "kind": "split_at_selector",
+  "desc": "wrong_cv cắt pipeline ngay sau bước tên 'select'",
+  "steps": [
+    [
+      "scale",
+      "scale"
+    ],
+    [
+      "select",
+      "select"
+    ],
+    [
+      "clf",
+      "clf"
+    ]
+  ]
+}
