@@ -13,12 +13,16 @@ test:          ## dùng đúng python của môi trường, không lấy nhầm 
 	$(PY) -m pytest tests/
 data: standardize quality curate test
 
-experiments:   ## chạy thí nghiệm giai thừa, ghi results/metrics/runs.parquet
-	$(PY) -m src.models
+ingest:        ## nhập dữ liệu theo lô, chất lượng theo lô (TV2, 2.4)
+	$(PY) -m src.ingest
+warehouse:     ## dựng data/warehouse/golub.duckdb (TV3, 2.3)
+	$(PY) -m src.warehouse
 evaluate:      ## 4 sơ đồ đánh giá + selection bias, ghi results/metrics/summary_*.csv (TV2, 2.4)
 	$(PY) -m src.evaluate
 figures:       ## vẽ lại toàn bộ F1–F12
 	$(PY) -m src.viz
+app:           ## mở dashboard Streamlit (TV6, 2.6)
+	$(PY) -m streamlit run app/Home.py
 
-all: data experiments evaluate figures
-.PHONY: fetch standardize quality curate test data experiments evaluate figures all
+all: data ingest warehouse evaluate figures
+.PHONY: fetch standardize quality curate test data ingest warehouse evaluate figures app all
