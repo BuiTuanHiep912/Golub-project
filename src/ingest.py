@@ -30,8 +30,13 @@ Mô hình lô (ADR-030):
   qc_samples.parquet  -> bảng fact_qc của kho (TV3): một hàng mỗi mẫu
   ingest_log.csv      -> nhật ký nhập: mỗi lần chạy GHI THÊM một dòng mỗi lô, không ghi đè
 
+Bộ file lỗi mẫu để demo (ADR-031): write_demo_files() sinh từ dữ liệu thật vào data/demo/
+(không đưa lên Git, tạo lại được) các file chip một mẫu và file lô, mỗi file một tình huống, kèm
+README.md ghi kết quả mong đợi.
+
 Chạy: make ingest  (Windows: python run_all.py ingest)
-      python -m src.ingest <file_lo_them.csv ...>   # nhập thêm lô (demo)
+      python -m src.ingest <file_lo_them.csv ...>   # nhập thêm lô (ghi cả vào bảng và nhật ký)
+      python -m src.ingest --demo                   # sinh data/demo/ và chạy thử, không ghi bảng
 """
 from __future__ import annotations
 
@@ -43,11 +48,11 @@ import numpy as np
 import pandas as pd
 
 try:
-    from src.config import CLEANSED_DIR, STD_DIR, VALID_SEX, VALID_SOURCE, VALID_SUBTYPE, VALID_TISSUE
+    from src.config import CLEANSED_DIR, DATA_DIR, STD_DIR, VALID_SEX, VALID_SOURCE, VALID_SUBTYPE, VALID_TISSUE
     from src.load import REQUIRED_COLS, SAMPLE_COLS
     from src.quality import EXPR_HI, EXPR_LO, MODZ_THRESHOLD, sample_correlation, sample_qc
 except ModuleNotFoundError:  # chạy trực tiếp `python src/ingest.py`
-    from config import CLEANSED_DIR, STD_DIR, VALID_SEX, VALID_SOURCE, VALID_SUBTYPE, VALID_TISSUE
+    from config import CLEANSED_DIR, DATA_DIR, STD_DIR, VALID_SEX, VALID_SOURCE, VALID_SUBTYPE, VALID_TISSUE
     from load import REQUIRED_COLS, SAMPLE_COLS
     from quality import EXPR_HI, EXPR_LO, MODZ_THRESHOLD, sample_correlation, sample_qc
 
@@ -57,6 +62,11 @@ BATCH_SOURCES = ("DFCI", "CALGB", "St-Jude", "CCG")
 BATCHES_FILE = "batches.parquet"
 QC_FILE = "qc_samples.parquet"
 LOG_FILE = "ingest_log.csv"
+
+# Bộ file demo nằm trong data/ nên theo .gitignore không lên Git; sinh lại bằng --demo.
+DEMO_DIR = DATA_DIR / "demo"
+# Bệnh nhân tập kiểm tra đóng vai bệnh nhân mới (ADR-014); 52 là ví dụ của patient_profile.
+DEMO_PATIENT = 52
 
 VALID_SPLIT = {"train", "test"}
 VALID_CLASS = set(VALID_SUBTYPE)
@@ -477,10 +487,109 @@ def validate_new_sample(path, std_dir: Path = STD_DIR) -> dict:
     return {"ok": True, "errors": errors, "warnings": warns, "values": values}
 
 
+# ---------------------------------------------------------------------------
+# Bộ file lỗi mẫu để demo (tuần 2 của lịch giai đoạn 2, ADR-031)
+# ---------------------------------------------------------------------------
+def write_demo_files(out_dir: Path = DEMO_DIR, std_dir: Path = STD_DIR) -> pd.DataFrame:
+    """Sinh bộ file demo từ dữ liệu thật; trả về bảng mô tả (cũng ghi ra out_dir/README.md).
+
+    Mỗi file một tình huống. Cột `expect` là kết quả mong đợi, máy đọc được để test kiểm lại:
+      file chip một mẫu (validate_new_sample): "ok", "ok+warning:<đoạn chữ>", "error:<đoạn chữ>"
+      file lô (ingest_batches(extra_files=...)): "passed", "blocked:<đoạn chữ>"
+    Ghi đè các file cùng tên; không đụng tới tầng dữ liệu nào.
+    """
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    X = pd.read_parquet(std_dir / "expression.parquet")
+    samples = pd.read_parquet(std_dir / "samples.parquet")
+    X.index, samples.index = X.index.astype(int), samples.index.astype(int)
+    base = X.loc[DEMO_PATIENT].rename("value").rename_axis("probe_id").reset_index()
+    rng = np.random.default_rng(0)
+    rows = []
+
+    def chip(name: str, df: pd.DataFrame | None, case: str, expect: str, raw_text: str | None = None) -> None:
+        path = out_dir / name
+        if raw_text is not None:
+            path.write_text(raw_text, encoding="utf-8")
+        else:
+            df.to_csv(path, index=False)
+        rows.append({"file": name, "kind": "mẫu", "case": case, "expect": expect})
+
+    chip("mau_hop_le_52.csv", base, f"chip hợp lệ của bệnh nhân {DEMO_PATIENT} (tập kiểm tra)", "ok")
+    chip("loi_thieu_gen.csv", base.iloc[:-29], "file bị cắt cụt, thiếu 29 dòng cuối", "error:thiếu 29/7129 gen")
+    typo = base.copy()
+    typo.loc[[100, 200, 300], "probe_id"] = typo.loc[[100, 200, 300], "probe_id"].str.upper()
+    chip("loi_sai_ma_gen.csv", typo, "3 mã gen gõ sai (đổi chữ hoa)", "error:3 mã gen không có trong")
+    chip("loi_trung_gen.csv", pd.concat([base, base.iloc[[10, 20]]]), "2 dòng gen bị lặp", "error:2 mã gen lặp lại")
+    blank = base.astype({"value": str})
+    blank.loc[[5, 50, 500, 5000], "value"] = ""
+    chip("loi_o_trong.csv", blank, "4 ô giá trị trống", "error:4 ô giá trị trống")
+    text = base.astype({"value": str})
+    text.loc[[7, 70, 700], "value"] = ["abc", "1,234", "N/A"]
+    chip("loi_khong_phai_so.csv", text, "giá trị chữ, dấu phẩy hàng nghìn, N/A", "error:3 giá trị không phải số")
+    chip("loi_sai_tieu_de.csv", base.rename(columns={"probe_id": "Gene Accession Number", "value": "52"}),
+         "tiêu đề kiểu Kaggle thay vì probe_id,value", "error:'probe_id,value'")
+    logged = base.assign(value=np.log10(base["value"].clip(100, 16000)).round(4))
+    chip("loi_da_log10.csv", logged, "giá trị đã threshold + log10", "error:có vẻ file đã log hóa")
+    chip("loi_file_rong.csv", None, "file rỗng (0 byte)", "error:file rỗng", raw_text="")
+    chip("canh_bao_chip_lech.csv", base.assign(value=rng.permutation(base["value"].to_numpy())),
+         "đủ 7129 gen nhưng giá trị bị xáo giữa các gen (chip lỗi)", "ok+warning:tương quan trung vị")
+
+    def batch(name: str, ids: list[int], new_ids: list[int], case: str, expect: str, damage=None) -> None:
+        df = pd.concat([samples.loc[ids, SAMPLE_COLS], X.loc[ids]], axis=1)
+        df.insert(0, "sample_id", new_ids)
+        df = df.astype({c: str for c in df.columns if c not in SAMPLE_COLS + ["sample_id"]})
+        if damage is not None:
+            df = damage(df.reset_index(drop=True))
+        df.to_csv(out_dir / name, index=False)
+        rows.append({"file": name, "kind": "lô", "case": case, "expect": expect})
+
+    batch("lo_hop_le_StJude.csv", [57, 58], [801, 802], "lô mới 2 mẫu của St-Jude, mã mẫu mới", "passed")
+
+    def break_batch(df: pd.DataFrame) -> pd.DataFrame:
+        df["source"] = "XYZ"                          # phòng lab ngoài danh mục
+        df.loc[1, "subtype"] = "T-ALL"                # mẫu 902 là AML nhưng ghi T-ALL
+        df.loc[0, X.columns[5]] = ""                  # 1 ô trống ở mẫu 901
+        return df.drop(columns=[X.columns[100]])      # thiếu 1 probe
+
+    batch("lo_loi_XYZ.csv", [50, 51, 53], [901, 902, 903],
+          "lô 3 mẫu: nguồn lạ, thiếu 1 probe, 1 ô trống, class lệch subtype",
+          "blocked:source ngoài danh mục", damage=break_batch)
+    batch("lo_trung_ma.csv", [DEMO_PATIENT], [DEMO_PATIENT], f"gửi lại mẫu {DEMO_PATIENT} với mã cũ",
+          f"blocked:sample_id đã có ở lô khác: [{DEMO_PATIENT}]")
+
+    manifest = pd.DataFrame(rows)
+    readme = ["# Bộ file lỗi mẫu để demo (TV2, công việc 2.4, ADR-031)", "",
+              "Sinh bởi `python -m src.ingest --demo` từ dữ liệu thật; không sửa tay, không đưa lên Git.", "",
+              "- File **mẫu**: một chip, định dạng `probe_id,value` → kiểm bằng `validate_new_sample(path)`",
+              "  (nút tải file ở màn hình Chất lượng dữ liệu / Hồ sơ bệnh nhân).",
+              "- File **lô**: `sample_id` + bảng mẫu + 7129 cột probe → `ingest_batches(extra_files=[...])`.", "",
+              "| File | Loại | Tình huống | Kết quả mong đợi |", "|---|---|---|---|"]
+    readme += [f"| `{r.file}` | {r.kind} | {r.case} | `{r.expect}` |" for r in manifest.itertuples()]
+    (out_dir / "README.md").write_text("\n".join(readme) + "\n", encoding="utf-8")
+    return manifest
+
+
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser(description="Nhập dữ liệu theo lô và ghi bảng chất lượng (TV2, 2.4)")
-    ap.add_argument("extra", nargs="*", help="file CSV lô thêm (demo lô lỗi), định dạng xem ingest_batches")
+    ap.add_argument("extra", nargs="*", help="file CSV lô thêm, định dạng xem ingest_batches")
+    ap.add_argument("--demo", action="store_true",
+                    help=f"sinh bộ file demo vào {DEMO_DIR} rồi chạy thử; không ghi bảng/nhật ký")
     args = ap.parse_args(argv)
+
+    if args.demo:
+        manifest = write_demo_files()
+        print(f"Đã sinh {len(manifest)} file demo vào {DEMO_DIR} (xem README.md)\n")
+        for r in manifest[manifest["kind"] == "mẫu"].itertuples():
+            res = validate_new_sample(DEMO_DIR / r.file)
+            detail = "; ".join(res["errors"] or res["warnings"]) or "—"
+            print(f"[{'OK ' if res['ok'] else 'LỖI'}] {r.file:<26} {detail}")
+        lots = [DEMO_DIR / f for f in manifest.loc[manifest["kind"] == "lô", "file"]]
+        out = ingest_batches(extra_files=lots)
+        print()
+        for row in out.itertuples():
+            print(f"[{row.status:<7}] {row.batch_id:<16} {row.reason or '—'}")
+        return
 
     batches = ingest_batches(extra_files=args.extra, write=True)
     show = ["batch_id", "n_samples", "status", "present_rate", "median_corr_other", "n_qc_outlier"]

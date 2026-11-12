@@ -246,3 +246,33 @@ def test_missing_or_empty_file_is_rejected(tmp_path, content, expected):
 
     assert res["ok"] is False
     assert expected in res["errors"][0]
+
+
+# ---------------------------------------------------------------------------
+# Bộ file lỗi mẫu để demo (ADR-031)
+# ---------------------------------------------------------------------------
+def test_every_demo_file_produces_its_documented_outcome(tmp_path):
+    # README.md của bộ demo hứa trước kết quả từng file; test này giữ lời hứa đó đúng khi code đổi.
+    from src.ingest import write_demo_files
+
+    manifest = write_demo_files(out_dir=tmp_path)
+
+    assert (tmp_path / "README.md").exists()
+    for row in manifest[manifest["kind"] == "mẫu"].itertuples():
+        res = validate_new_sample(tmp_path / row.file)
+        outcome, _, needle = row.expect.partition(":")
+        if outcome == "ok":
+            assert res["ok"] and not res["warnings"], (row.file, res)
+        elif outcome == "ok+warning":
+            assert res["ok"] and any(needle in w for w in res["warnings"]), (row.file, res)
+        else:
+            assert not res["ok"] and any(needle in e for e in res["errors"]), (row.file, res)
+
+    lots = manifest[manifest["kind"] == "lô"]
+    out = ingest_batches(extra_files=[tmp_path / f for f in lots["file"]]).set_index("batch_id")
+    for row in lots.itertuples():
+        status, _, needle = row.expect.partition(":")
+        got = out.loc[row.file.removesuffix(".csv")]
+        assert got["status"] == status, (row.file, got["reason"])
+        assert needle in got["reason"], (row.file, got["reason"])
+    assert (out.loc[["B1-DFCI", "B2-CALGB", "B3-St-Jude", "B4-CCG"], "status"] == "passed").all()

@@ -356,6 +356,33 @@ tái lập được và truy ngược về nguồn.
 - **Hệ quả:** notebook 02 (TV1) vẫn còn hàm vẽ cũ; chạy lại notebook sẽ ghi đè hình bằng bản cũ. Theo
   ADR-014 TV6 không sửa notebook của người khác: TV1 thay ô vẽ bằng lời gọi `viz` (xem `docs/handover/2.6.md`).
 
+## ADR-031 — Bộ file lỗi mẫu, F8 và F10 bản cuối (công việc 2.4, tuần 2 của lịch giai đoạn 2)
+- **Ngày:** 12/11/2026 · **Người quyết định:** TV2
+- **Bối cảnh:** nhánh `2.4-f8-f10-demo` (commit `562ec9c`) chỉ có 4 file JSON/CSV vài dòng trong
+  `data/sandbox/demo_errors/` (thêm bằng `git add -f`, trái `.gitignore` `data/**`), dạng dict metadata
+  không khớp `validate_new_sample(path)` (file chip 7129 gen); chưa có F8; F10 vẫn là bản 1 (pipeline tạm
+  trên tầng cleansed, chữ 9 pt / 220 dpi, tiêu đề ghi cứng "100 lần hoán vị"). Làm lại trên `2.4-f8-f10-demo-v2`.
+- **Quyết định:**
+  - **Bộ file lỗi mẫu** sinh bằng code (`write_demo_files()`, `python -m src.ingest --demo`) từ dữ liệu
+    thật vào `data/demo/` (không lên Git, tạo lại được): 10 file chip một mẫu + 3 file lô, `README.md` ghi
+    kết quả mong đợi; `tests/test_ingest.py` kiểm từng file. Gỡ `data/sandbox/demo_errors/`.
+  - **F8 = "Chất lượng dữ liệu theo lô"** (`src/viz_ingest.py`, `F08_chat_luong_theo_lo_{report,slide}.png`):
+    strip plot theo lô của tương quan với mẫu các lô khác và tỷ lệ call P; mẫu `qc_outlier` khoanh đen.
+    **Giả định cần TV1 xác nhận:** tài liệu "Kế hoạch giai đoạn 2 (hướng mới)" chưa có trong repo; F8 cũ
+    (hiệu năng theo k) phục vụ H2 đã bỏ ở ADR-014, còn lịch mới giao F8 cho việc 2.4 "Nhập theo lô, chất lượng".
+  - **F10 bản cuối:** đầu vào tầng curated qua `make_preprocess()` của TV3 (bỏ bước log10 tạm và bộ lọc
+    cảnh báo của ADR-008 — chạy với `-W error::UserWarning` không còn cảnh báo nào); hình vẽ qua `src/viz.py`
+    (10/16 pt, 300/150 dpi, xám + một màu nhấn cho "CV sai", nhãn trực tiếp; bản slide bỏ chú thích phụ);
+    số lần hoán vị và trung bình trên hình tính từ dữ liệu. F11 vẽ cùng kiểu; bản cuối do TV1 vẽ (lịch mới).
+  - **Theo quy ước dữ liệu ADR-014**, mọi bước học của `make evaluate` chỉ dùng 38 mẫu huấn luyện:
+    `nested_cv`, `wrong_cv` và thí nghiệm selection bias chạy trên 38 mẫu (trước đây 72);
+    `original_split` học 38 rồi chấm 34; `loocv` không đổi. Cột `data` của `summary_evaluation.csv` ghi rõ.
+- **Kết quả (`make evaluate`, 100 hoán vị, 12/11/2026):** nhãn thật — CV đúng 0.951 ± 0.019, CV sai
+  1.000 ± 0.000; nhãn hoán vị — CV đúng 0.510 ± 0.089, CV sai **0.826 ± 0.065** → H3 vẫn được xác nhận.
+  `original_split` 0.964 (AUC 0.996; 33/34 đúng, Wilson 95% [0.851, 0.995]; McNemar với lớp đa số
+  p = 0.00024); `nested_cv` trên 38 mẫu 0.922 ± 0.137 (fold chỉ ~8 mẫu nên SD lớn).
+- **Kiểm thử:** `tests/test_viz_ingest.py` (2), 2 test hồi quy F10 trong `tests/test_evaluate.py`, test bộ demo.
+
 ## Nhật ký nhanh (mục 5.2 kế hoạch)
 
 | Ngày | Quyết định | Lý do | Người quyết định |
@@ -380,3 +407,4 @@ tái lập được và truy ngược về nguồn.
 | 22/11/2026 | 2.6: vẽ lại F01, F04d bằng `viz.py` (6,5 in, chữ ≥ 10 pt); loại mô BM xám nhạt, PB đen | ADR-070 | TV6 |
 | 17/11/2026 | 2.2 bản 2: độ tin cậy (P/A theo lớp), độ vững, lô mới (`marker_consistency`, `batch_anomalies`), đọc kho DuckDB, `src/viz_gene.py`; St-Jude 41 giữ chiều, 0 đảo chiều | ADR-052 | TV4 |
 | 18/11/2026 | 2.2: `marker_consistency` thêm kiểm định hoán vị trong lô (St-Jude p = 2/56 ≈ 0,036) và cột `batch_diff_sd` | ADR-052 | TV4 |
+| 12/11/2026 | 2.4: bộ file lỗi mẫu sinh bằng code (`--demo`), F8 chất lượng theo lô, F10 bản cuối trên tầng curated theo style guide; mọi bước học chỉ dùng 38 mẫu huấn luyện | ADR-031 | TV2 |
