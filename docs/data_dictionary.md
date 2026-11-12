@@ -113,6 +113,12 @@ CSV đúng hai cột `probe_id,value`, mỗi dòng một probe (đủ 7129 probe
 tùy ý), giá trị ở thang MAS4 gốc như `data/raw` (chưa threshold/log, được phép âm). Kết quả `values`
 là Series float theo thứ tự `genes.parquet`, dùng thẳng cho `patient_profile(values=...)` (TV1).
 
+### Bộ file lỗi mẫu — `data/demo/` (sinh bởi `python -m src.ingest --demo`, ADR-031)
+
+10 file chip một mẫu (định dạng trên) và 3 file lô (`sample_id` + 6 cột bảng mẫu + 7129 cột probe),
+mỗi file một tình huống; `data/demo/README.md` liệt kê kết quả mong đợi. Sinh từ dữ liệu thật nên
+không đưa lên Git; chạy lại lệnh trên để tạo lại.
+
 ## 4. Các phép biến đổi ở tầng curated (công việc 1.2 — TV3)
 
 1. Threshold `[100, 16000]` → 2. `log10` → `X_log10.parquet` (mọi mô hình dùng bản này).

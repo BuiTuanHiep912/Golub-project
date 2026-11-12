@@ -192,6 +192,33 @@ tái lập được và truy ngược về nguồn.
     không cảnh báo nhầm.
 - **Kiểm thử:** `tests/test_ingest.py` (20 test trên dữ liệu thật; báo lỗi, không skip khi thiếu dữ liệu).
 
+## ADR-031 — Bộ file lỗi mẫu, F8 và F10 bản cuối (công việc 2.4, tuần 2 của lịch giai đoạn 2)
+- **Ngày:** 12/11/2026 · **Người quyết định:** TV2
+- **Bối cảnh:** nhánh `2.4-f8-f10-demo` (commit `562ec9c`) chỉ có 4 file JSON/CSV vài dòng trong
+  `data/sandbox/demo_errors/` (thêm bằng `git add -f`, trái `.gitignore` `data/**`), dạng dict metadata
+  không khớp `validate_new_sample(path)` (file chip 7129 gen); chưa có F8; F10 vẫn là bản 1 (pipeline tạm
+  trên tầng cleansed, chữ 9 pt / 220 dpi, tiêu đề ghi cứng "100 lần hoán vị"). Làm lại trên `2.4-f8-f10-demo-v2`.
+- **Quyết định:**
+  - **Bộ file lỗi mẫu** sinh bằng code (`write_demo_files()`, `python -m src.ingest --demo`) từ dữ liệu
+    thật vào `data/demo/` (không lên Git, tạo lại được): 10 file chip một mẫu + 3 file lô, `README.md` ghi
+    kết quả mong đợi; `tests/test_ingest.py` kiểm từng file. Gỡ `data/sandbox/demo_errors/`.
+  - **F8 = "Chất lượng dữ liệu theo lô"** (`src/viz_ingest.py`, `F08_chat_luong_theo_lo_{report,slide}.png`):
+    strip plot theo lô của tương quan với mẫu các lô khác và tỷ lệ call P; mẫu `qc_outlier` khoanh đen.
+    **Giả định cần TV1 xác nhận:** tài liệu "Kế hoạch giai đoạn 2 (hướng mới)" chưa có trong repo; F8 cũ
+    (hiệu năng theo k) phục vụ H2 đã bỏ ở ADR-014, còn lịch mới giao F8 cho việc 2.4 "Nhập theo lô, chất lượng".
+  - **F10 bản cuối:** đầu vào tầng curated qua `make_preprocess()` của TV3 (bỏ bước log10 tạm và bộ lọc
+    cảnh báo của ADR-008 — chạy với `-W error::UserWarning` không còn cảnh báo nào); hình vẽ qua `src/viz.py`
+    (10/16 pt, 300/150 dpi, xám + một màu nhấn cho "CV sai", nhãn trực tiếp; bản slide bỏ chú thích phụ);
+    số lần hoán vị và trung bình trên hình tính từ dữ liệu. F11 vẽ cùng kiểu; bản cuối do TV1 vẽ (lịch mới).
+  - **Theo quy ước dữ liệu ADR-014**, mọi bước học của `make evaluate` chỉ dùng 38 mẫu huấn luyện:
+    `nested_cv`, `wrong_cv` và thí nghiệm selection bias chạy trên 38 mẫu (trước đây 72);
+    `original_split` học 38 rồi chấm 34; `loocv` không đổi. Cột `data` của `summary_evaluation.csv` ghi rõ.
+- **Kết quả (`make evaluate`, 100 hoán vị, 12/11/2026):** nhãn thật — CV đúng 0.951 ± 0.019, CV sai
+  1.000 ± 0.000; nhãn hoán vị — CV đúng 0.510 ± 0.089, CV sai **0.826 ± 0.065** → H3 vẫn được xác nhận.
+  `original_split` 0.964 (AUC 0.996; 33/34 đúng, Wilson 95% [0.851, 0.995]; McNemar với lớp đa số
+  p = 0.00024); `nested_cv` trên 38 mẫu 0.922 ± 0.137 (fold chỉ ~8 mẫu nên SD lớn).
+- **Kiểm thử:** `tests/test_viz_ingest.py` (2), 2 test hồi quy F10 trong `tests/test_evaluate.py`, test bộ demo.
+
 ## Nhật ký nhanh (mục 5.2 kế hoạch)
 
 | Ngày | Quyết định | Lý do | Người quyết định |
@@ -209,3 +236,4 @@ tái lập được và truy ngược về nguồn.
 | 04/11/2026 | 2.4: `mcnemar_test` ghép theo `sample_id`; F11 giữ cột "uncertain"; `nested_cv` có vòng trong chọn k, C; thêm bộ golden-file 19 testcase | ADR-013 | TV2 |
 | 09/11/2026 | Đổi hướng giai đoạn 2 sang quản trị dữ liệu và dashboard; dựng khung file, lệnh `make`, giữ trước số ADR | ADR-014 | TV1 (giảng viên duyệt) |
 | 12/11/2026 | 2.4: `src/ingest.py` theo giao diện ADR-014 — 4 lô theo nguồn, chặn lô lỗi, nhật ký, `validate_new_sample(path)`; tách `quality.sample_qc()` dùng chung | ADR-030 | TV2 |
+| 12/11/2026 | 2.4: bộ file lỗi mẫu sinh bằng code (`--demo`), F8 chất lượng theo lô, F10 bản cuối trên tầng curated theo style guide; mọi bước học chỉ dùng 38 mẫu huấn luyện | ADR-031 | TV2 |

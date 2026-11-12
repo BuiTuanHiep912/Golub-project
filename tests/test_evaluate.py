@@ -224,3 +224,50 @@ def test_nested_cv_with_param_grid_runs_an_inner_loop():
     assert res["config"]["param_grid"] == {"select__k": [5, 10], "clf__C": [0.1, 1]}
     assert len(res["per_fold"]) == 5
     assert res["bal_acc_mean"] > 0.9
+
+
+def _sb_runs(n_perm: int) -> pd.DataFrame:
+    """Bảng kết quả selection bias giả: 3 seed nhãn thật, n_perm lần hoán vị."""
+    rows = [{"labels": "real", "cv": cv, "rep": r, "seed": r, "bal_acc": 0.95, "auc": 0.99}
+            for r in range(3) for cv in ("correct", "wrong")]
+    rows += [{"labels": "permuted", "cv": cv, "rep": r, "seed": r, "bal_acc": acc, "auc": 0.5}
+             for r in range(n_perm) for cv, acc in (("correct", 0.5), ("wrong", 0.8))]
+    return pd.DataFrame(rows)
+
+
+def test_f10_counts_permutations_from_runs_instead_of_hard_coding():
+    # ROOT CAUSE:
+    #
+    # Tiêu đề F10 ghi cứng "100 lần hoán vị nhãn", nên chạy thử `--n-permutations 7` vẫn in 100.
+    #
+    # Sửa bằng cách đếm số lần hoán vị và lấy trung bình "hoán vị × CV sai" từ chính `runs`.
+    from src.evaluate import _selection_bias_figure
+
+    fig = _selection_bias_figure(_sb_runs(7), mode="report")
+    texts = [fig._suptitle.get_text()] + [ax.get_title(loc="left") for ax in fig.axes]
+
+    assert any("7 lần hoán vị nhãn, 3 seed nhãn thật" in t for t in texts)
+    assert "nhãn hoán vị vẫn đạt 0.80" in fig._suptitle.get_text()
+
+
+def test_f10_follows_style_guide_sizes(tmp_path):
+    # ROOT CAUSE:
+    #
+    # F10/F11 bản 1 dùng cỡ chữ 9 pt và 220 dpi riêng của evaluate.py, dưới mức tối thiểu của
+    # docs/style_guide.md (báo cáo: chữ >= 10 pt, 300 dpi; slide: chữ >= 16 pt).
+    #
+    # Sửa bằng cách vẽ qua src/viz.py (styled, figsize, save_figure).
+    from matplotlib.image import imread
+
+    from src.evaluate import _selection_bias_figure, plot_selection_bias
+    from src.viz import FIG_STYLES
+
+    for mode in ("report", "slide"):
+        fig = _selection_bias_figure(_sb_runs(5), mode=mode)
+        sizes = [t.get_fontsize() for ax in fig.axes for t in ax.texts + ax.get_xticklabels() + ax.get_yticklabels()]
+        assert min(sizes) >= FIG_STYLES[mode]["fontsize"], mode
+
+    paths = plot_selection_bias(_sb_runs(5), base_dir=tmp_path)
+    assert [p.name for p in paths] == ["F10_selection_bias_report.png", "F10_selection_bias_slide.png"]
+    width_px = imread(paths[0]).shape[1]
+    assert width_px >= 0.9 * FIG_STYLES["report"]["width"] * FIG_STYLES["report"]["dpi"]   # ~300 dpi ở 6,5 in
