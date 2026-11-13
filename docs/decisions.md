@@ -125,6 +125,29 @@ tái lập được và truy ngược về nguồn.
   - Kết luận H5 đổi từ "ủng hộ mạnh" thành "ủng hộ ở mức ALL/AML, không ủng hộ ở mức B-ALL/T-ALL".
 - **Hệ quả:** xóa `F5_clustermap_{report,slide}.png` (bản trùng cũ của F05). Cập nhật `docs/report/3.2_class_discovery.md`, `docs/handover/1.5.md`.
 
+## ADR-014 — Đổi hướng giai đoạn 2: quản trị dữ liệu và dashboard, thu gọn học máy
+- **Ngày:** 09/11/2026 · **Người đề xuất:** TV1 · **Người quyết định:** giảng viên duyệt, TV1
+- **Bối cảnh:** giảng viên góp ý đề tài thiên về học máy; học phần Quản trị dữ liệu và trực quan hóa
+  (IT5425) yêu cầu đẩy mạnh quản trị dữ liệu và trực quan hóa có tính thực tế.
+- **Quyết định:**
+  - Bỏ thí nghiệm giai thừa 252 cấu hình và giả thuyết H2, H4; xóa `src/features.py`, `src/models.py`
+    (còn trống) và lệnh `make experiments`. `config/experiment_config.yaml` giữ lại làm tài liệu giai
+    đoạn 1, giai đoạn 2 không dùng.
+  - Thêm: nhập theo lô (`src/ingest.py`, TV2), kho DuckDB (`src/warehouse.py`, `sql/`, TV3), khám phá
+    gen (`src/gene_explorer.py`, TV4), hồ sơ bệnh nhân (`src/patient.py`, TV1), thiết kế lại hình của
+    bài báo (TV5), dashboard Streamlit bắt buộc chạy được (`app/`, TV6). Thêm `duckdb==1.5.6`.
+  - Giữ mô hình Golub weighted voting (TV1) và thí nghiệm selection bias (TV2).
+  - Quy ước dữ liệu: 38 mẫu huấn luyện là dữ liệu tham chiếu; 34 mẫu kiểm tra đóng vai bệnh nhân mới,
+    không dùng để huấn luyện, chọn gen hay tính tham số.
+- **Quy tắc tránh conflict khi làm song song:**
+  - Mỗi file một chủ, không sửa file của người khác; không sửa notebook của người khác.
+  - `src/viz.py` chỉ TV6 sửa; hàm vẽ mới để trong file riêng `src/viz_<chủ đề>.py`.
+  - `Makefile`, `run_all.py`, `environment.yml`, `requirements.txt`: báo nhóm trước khi sửa.
+  - Số ADR giữ trước: ADR-013 cho nhánh `2.4-evaluate` (TV2); sau đó TV1 020–029, TV2 030–039,
+    TV3 040–049, TV4 050–059, TV5 060–069, TV6 070–079.
+  - `tests/test_interfaces.py` khóa tên hàm dùng chung; đổi tên thì ghi ADR và sửa test cùng lúc.
+- **Hệ quả:** kế hoạch, phân công và hạn giai đoạn 2 nằm trong tài liệu "Kế hoạch giai đoạn 2 (hướng mới)".
+
 ## ADR-050 — Quy ước của `src/features.py` (công việc 2.2, bản 1; đã thay thế bởi ADR-051)
 - **Ngày:** 01/11/2026 · **Người quyết định:** TV4
 - **Giao diện:** 6 bộ chọn `snr, ttest, lasso, enet, rf, svm_rfe` (đúng tên trong `experiment_config.yaml`),
@@ -154,8 +177,8 @@ tái lập được và truy ngược về nguồn.
 - **Bối cảnh:** kế hoạch mới chuyển trọng tâm sang quản trị dữ liệu và trực quan hóa. Thí nghiệm giai thừa 252 cấu hình,
   giả thuyết H2, H4 và hình F7 (UpSet) bị bỏ. Công việc 2.2 đổi từ *Chọn biến và độ ổn định* sang *Khám phá gen*,
   cung cấp logic cho màn hình Khám phá gen của dashboard (TV6, 2.6).
-- **Thay thế ADR-050:** `src/features.py` và `tests/test_features.py` bị xóa theo ADR-014 (bản đã làm còn trong lịch sử
-  git của nhánh `tv4`). Không làm bootstrap, Jaccard, `final_genes.csv`, F7 cũ. Hình F7 mới (sơ đồ truy vết) thuộc TV3.
+- **Thay thế ADR-050:** `src/features.py` và `tests/test_features.py` bị xóa theo ADR-014; bản đã làm không đưa vào repo,
+  ADR-050 chỉ còn là ghi chép thiết kế. Không làm bootstrap, Jaccard, `final_genes.csv`, F7 cũ. Hình F7 mới (sơ đồ truy vết) thuộc TV3.
   Đánh số 050–051 theo dải số dành cho TV4 trong ADR-014 (ADR-013 dành cho TV2).
 - **Giao diện** (`src/gene_explorer.py`), TV6 chỉ gọi các hàm này, không tự tính lại:
   `find_gene(query)`, `gene_values(probe_id)`, `gene_stats(probe_id, by)`, `disease_or_source(probe_id)`,
@@ -179,7 +202,7 @@ tái lập được và truy ngược về nguồn.
   `function_source = "description"`. Ký hiệu rỗng trong bảng được điền từ file chú giải.
 - **Bộ nhớ đệm:** dữ liệu đọc một lần, khóa theo đường dẫn và thời điểm sửa file (sinh lại file thì tự đọc lại).
   Lần gọi đầu 0,2–0,7 s, các lần sau < 0,02 s (trước khi có bộ nhớ đệm: 0,5–1 s mỗi lần).
-- **Kiểm tra:** `tests/test_gene_explorer.py` (29 test, dữ liệu tổng hợp cùng cỡ nhóm Golub + 1 test trên dữ liệu thật).
+- **Kiểm tra:** `tests/test_gene_explorer.py` (30 test, dữ liệu tổng hợp cùng cỡ nhóm Golub + 1 test trên dữ liệu thật).
 
 ## Nhật ký nhanh (mục 5.2 kế hoạch)
 
@@ -195,5 +218,6 @@ tái lập được và truy ngược về nguồn.
 | 25/10/2026 | 1.3: H6 kiểm định trong từng lớp (0/15 có ý nghĩa sau BH), không hiệu chỉnh batch; chú thích + test cho `experiment_config.yaml` | ADR-010 | TV1 |
 | 28/10/2026 | 1.4: `src/viz.py` (F2, F2b, F3, F4a–c, F4e), `style_guide.md`, `notebooks/01_eda.ipynb`, `tests/test_viz.py`; F04d giữ nguyên của TV1 | ADR-011 | TV6 |
 | 01/11/2026 | 1.5: sửa bảng chéo lệch `sample_id`, SOM qua 10 seed, notebook tự sinh CSV + F05/F05b/F05c; H5 chỉ ủng hộ ở mức ALL/AML | ADR-012 | TV1 |
+| 09/11/2026 | Đổi hướng giai đoạn 2 sang quản trị dữ liệu và dashboard; dựng khung file, lệnh `make`, giữ trước số ADR | ADR-014 | TV1 (giảng viên duyệt) |
 | 01/11/2026 | 2.2: `src/features.py` bản 1 — 6 bộ chọn gen + `make_selector`, luôn đúng k gen, snr/ttest cân bằng hai phía | ADR-050 | TV4 |
 | 12/11/2026 | 2.2 đổi sang Khám phá gen theo kế hoạch mới: `src/gene_explorer.py`, thay thế ADR-050; schema `gene_annotations.csv` cho TV5 | ADR-051 | TV4 |
