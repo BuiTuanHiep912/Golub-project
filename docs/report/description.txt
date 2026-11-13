@@ -1,0 +1,994 @@
+MÔ TẢ DỮ LIỆU
+Dự án: Phân loại bạch cầu cấp ALL/AML từ dữ liệu biểu hiện gen (Golub et al., 1999)
+  PHẦN 1 (mục 0–6): tầng raw          — data/raw/  (chỉ đọc; nguồn và MD5 trong data/raw/SOURCES.md)
+  PHẦN 2 (mục 7–12): tầng standardized — data/standardized/  (sinh bằng python -m src.load)
+  PHẦN 3 (mục 13–14): tầng cleansed    — data/cleansed/     (sinh bằng python -m src.quality)
+  PHẦN 4 (mục 15–18): tầng curated     — data/curated/      (sinh bằng python -m src.preprocess)
+  PHẦN 5 (mục 19–20): tầng sandbox và tổng kết toàn bộ các tầng
+  Sinh lại toàn bộ: python run_all.py data
+Mọi con số trong tài liệu này được đo trực tiếp trên các file dữ liệu.
+
+================================================================================
+0. TỔNG QUAN
+================================================================================
+
+Bộ dữ liệu gồm 72 bệnh nhân bạch cầu cấp, mỗi bệnh nhân được đo mức biểu hiện của
+7129 probe trên chip Affymetrix Hu6800 (khoảng 6817 gen người và 58 probe điều khiển).
+Đây là bài toán p >> n điển hình: số biến (7129) gấp khoảng 100 lần số mẫu (72).
+
+Dữ liệu được lấy từ hai nguồn công khai, gồm 4 file:
+
+  File                                       Nguồn       Kích thước       Vai trò
+  -----------------------------------------  ----------  ---------------  ----------------------------------
+  kaggle/data_set_ALL_AML_train.csv          Kaggle      7129 hàng x 78   Biểu hiện gen, 38 mẫu huấn luyện
+  kaggle/data_set_ALL_AML_independent.csv    Kaggle      7129 hàng x 70   Biểu hiện gen, 34 mẫu kiểm tra
+  kaggle/actual.csv                          Kaggle      72 hàng x 2      Nhãn lớp ALL/AML (nguồn nhãn chính)
+  openintro/golub.csv                        OpenIntro   72 hàng x 7135   Thông tin lâm sàng/mẫu + biểu hiện
+
+  Kaggle:    https://www.kaggle.com/datasets/crawford/gene-expression
+  OpenIntro: https://www.openintro.org/data/index.php?data=golub
+
+Khóa liên kết giữa các file là MÃ BỆNH NHÂN (số nguyên 1..72):
+  - tên cột biểu hiện trong hai file Kaggle ("1", "2", ..., "72"),
+  - cột `patient` trong actual.csv,
+  - cột `Samples` trong golub.csv.
+Danh sách probe được liên kết qua mã probe (`Gene Accession Number` ở Kaggle = tên cột
+biểu hiện ở golub.csv); thứ tự 7129 probe trùng khớp hoàn toàn giữa hai nguồn.
+
+Phân chia train/test là của bài báo gốc, không phải do nhóm chia ngẫu nhiên:
+  - Train (mẫu 1..38):  27 ALL + 11 AML, toàn bộ là tủy xương (BM).
+  - Test  (mẫu 39..72): 20 ALL + 14 AML, gồm 24 BM và 10 máu ngoại vi (PB).
+
+
+================================================================================
+1. FILE kaggle/data_set_ALL_AML_train.csv  (tập huấn luyện)
+================================================================================
+
+1.1. Cấu trúc chung
+  - 7129 hàng, mỗi hàng là MỘT PROBE (không phải một bệnh nhân).
+  - 78 cột = 2 cột mô tả probe + 38 bệnh nhân x 2 cột (giá trị biểu hiện, call).
+  - Bố cục "probe theo hàng, mẫu theo cột" là dạng xuất của phần mềm chip; muốn mô hình
+    hóa phải xoay lại thành ma trận "mẫu theo hàng, probe theo cột" (việc của src/load.py).
+  - Không có giá trị thiếu (NaN = 0).
+
+1.2. Mô tả từng trường
+
+  [1] Gene Description
+      Kiểu:      chuỗi (text tự do)
+      Ý nghĩa:   Mô tả gen mà probe đo, thường gồm ký hiệu gen + tên đầy đủ,
+                 ví dụ "RPS11 Ribosomal protein S11", "POU5F1 Octamer binding protein 3".
+                 Với probe điều khiển: "AFFX-BioB-5_at (endogenous control)".
+      Số giá trị khác nhau: 6627 trên 7129 hàng.
+      Lưu ý:     KHÔNG phải khóa duy nhất. 424 mô tả được dùng chung bởi 926 probe
+                 (một gen có thể được đo bằng nhiều probe; nhiều nhất là 7 probe cùng mô tả
+                 "GB DEF = Unknown protein mRNA; partial cds", RPS11 có 6 probe).
+                 Khi đếm "số gen" hoặc diễn giải danh sách gen phải gộp theo trường này.
+
+  [2] Gene Accession Number
+      Kiểu:      chuỗi; KHÓA DUY NHẤT của probe (7129 giá trị, không trùng)
+      Ý nghĩa:   Mã probe set của Affymetrix, gồm hai phần:
+        a) Phần đầu: mã truy cập GenBank của trình tự dùng để thiết kế probe.
+           Chữ cái đầu cho biết loạt mã GenBank:
+             U: 1826   X: 1252   M: 1132   D: 753   L: 639   Z: 258   S: 216 ...
+           HG...-HT... (496 probe): cụm gen người theo cơ sở dữ liệu của Affymetrix/TIGR.
+           AFFX-... (58 probe): probe điều khiển kỹ thuật (xem mục 1.3).
+        b) Hậu tố: loại probe set theo quy ước Affymetrix:
+             _at    5812  probe tiêu chuẩn, đặc hiệu cho một bản phiên mã
+             _s_at  1168  dùng chung (shared) cho nhiều bản phiên mã/gen cùng họ
+             _f_at   106  thuộc họ gen (family), có thể lai chéo với gen tương tự
+             _r_at    28  thiết kế với bộ quy tắc nới lỏng (rules dropped), độ đặc hiệu thấp hơn
+             _st      15  probe mạch xuôi (sense), chỉ có ở nhóm AFFX, dùng làm đối chứng âm
+      Lưu ý:     Probe _s_at, _f_at, _r_at kém đặc hiệu hơn _at; nên cân nhắc khi diễn giải
+                 sinh học một gen được chọn.
+
+  [3] "1", "2", ..., "38"   (38 cột giá trị biểu hiện, mỗi cột là một bệnh nhân)
+      Kiểu:      số nguyên (int64)
+      Ý nghĩa:   Mức biểu hiện của probe trong mẫu của bệnh nhân đó, tính theo thuật toán
+                 Average Difference của phần mềm Affymetrix GeneChip MAS 4.0:
+                 trung bình hiệu (PM − MM) giữa ô khớp hoàn hảo (perfect match) và ô sai
+                 lệch (mismatch) của các cặp probe. Đơn vị tùy ý (cường độ huỳnh quang).
+      Tên cột:   chính là mã bệnh nhân.
+      Thứ tự:    KHÔNG tăng dần: 1..27, 34..38, 28..33. Phải ghép theo tên cột, không theo vị trí.
+      Thống kê (38 x 7129 = 270 902 giá trị):
+                 min = −28 400; max = 61 228; trung vị = 127
+                 giá trị âm:        77 175  (28,5%)
+                 giá trị < 100:    125 286  (46,2%, bao gồm cả giá trị âm)
+                 giá trị > 16 000:   2 322  (0,9%)
+                 trung bình theo mẫu dao động 493 – 954 (giữa các chip có khác biệt cường độ)
+      Lưu ý:     Giá trị âm KHÔNG phải lỗi nhập liệu: đó là khi MM > PM, đặc trưng của
+                 MAS 4.0. Giá trị < 100 coi là dưới ngưỡng phát hiện tin cậy, > 16 000 là
+                 vùng bão hòa của máy quét. Đây là lý do tiền xử lý cắt ngưỡng [100, 16 000]
+                 trước khi lấy log10 (Dudoit et al., 2002).
+
+  [4] call, call.1, ..., call.37   (38 cột, đi ngay sau cột biểu hiện tương ứng)
+      Kiểu:      chuỗi, một ký tự
+      Giá trị:   P = Present (có mặt), A = Absent (vắng mặt), M = Marginal (không rõ)
+      Ý nghĩa:   Kết luận của MAS 4.0 về việc bản phiên mã có thực sự được phát hiện
+                 trong mẫu hay không.
+      Phân bố:   A 187 892 (69,4%)   P 78 632 (29,0%)   M 4 378 (1,6%)
+      Đối chiếu với giá trị biểu hiện (10 mẫu đầu): trung vị của P ≈ 695, M ≈ 282, A ≈ 37,
+                 tức call nhất quán với cường độ.
+      Lưu ý:     Tên cột bị pandas tự đặt thành call, call.1, ... vì file gốc lặp tên "call";
+                 call thứ i thuộc về cột biểu hiện đứng ngay trước nó. Nhóm lưu lại
+                 (calls.parquet) cho đầy đủ nhưng KHÔNG dùng làm đầu vào mô hình.
+
+1.3. Nhóm probe điều khiển AFFX (58 probe)
+  Probe do Affymetrix gắn sẵn trên mọi chip để kiểm soát chất lượng thí nghiệm, không nhằm
+  đo sự khác biệt sinh học giữa các bệnh nhân. Gồm ba nhóm:
+    - BioB, BioC, BioDn, CreX (gen E. coli và phage P1, không có trong tế bào người):
+      đối chứng lai (hybridization spike-in), thêm vào dung dịch lai với nồng độ biết trước
+      -> kiểm tra bước lai và quét chip.
+    - DapX, LysX, PheX, ThrX, TrpnX (gen B. subtilis): đối chứng poly-A, thêm vào từ bước
+      chuẩn bị RNA -> kiểm tra toàn bộ quy trình xử lý mẫu.
+    - HUMGAPDH, HSAC07 (beta-actin), HUMTFRR, HUMISGF3A, HUMRGE, M27830: gen người "giữ nhà",
+      biểu hiện mạnh và ổn định ở mọi tế bào -> kiểm tra chất lượng RNA của mẫu.
+  Hai nhóm đầu là đối chứng ngoại sinh (exogenous, thêm từ ngoài vào); chỉ nhóm thứ ba là
+  đối chứng nội sinh (endogenous). Nhãn "(endogenous control)" trong cột Gene Description
+  được file Kaggle ghi chung cho cả 58 probe, không phân biệt.
+  Hậu tố _5, _M, _3 cho biết vùng đầu 5', giữa, đầu 3' của bản phiên mã; tỷ số 3'/5' cao
+  bất thường cho thấy RNA bị phân hủy. Hậu tố _st là probe mạch xuôi (sense), dùng làm
+  đối chứng âm.
+  Xử lý: đánh dấu is_control = True, không đưa vào phân tích gen khác biệt và chọn biến.
+  Nếu một probe AFFX xuất hiện trong danh sách gen phân biệt lớp, đó là dấu hiệu của khác
+  biệt kỹ thuật giữa các lô (batch effect) chứ không phải khác biệt sinh học.
+
+1.4. Mẫu dữ liệu
+  Số cột: 2 cột mô tả probe + 38 bệnh nhân x 2 cột (biểu hiện, call) = 78 cột.
+  Mỗi bệnh nhân chiếm một cặp cột liền nhau: cột tên là mã bệnh nhân, ngay sau là "call".
+
+  Dòng tiêu đề và 4 hàng trích (6 cột bệnh nhân đầu ... 4 cột cuối):
+
+  Gene Description                             | Gene Accession Number | 1    | call | 2    | call | 3   | call | ... | 32   | call | 33   | call
+  AFFX-BioB-5_at (endogenous control)          | AFFX-BioB-5_at        | -214 | A    | -139 | A    | -76 | A    | ... |      |      |      |
+  AFFX-BioB-M_at (endogenous control)          | AFFX-BioB-M_at        | -153 | A    | -73  | A    | -49 | A    | ... |      |      |      |
+  CD33 CD33 antigen (differentiation antigen)  | M23197_at             | 261  | A    | 101  | A    | 309 | A    | ... |      |      |      |
+  Zyxin                                        | X95735_at             | 298  | A    | 307  | A    | 309 | A    | ... | 3297 | P    | 3482 | P
+
+  Cách đọc: hàng "Zyxin" cho biết probe X95735_at ở bệnh nhân 1 có giá trị 298 và call = A
+  (không phát hiện); ở bệnh nhân 33 có giá trị 3482 và call = P (có mặt). Bệnh nhân 1–3 là
+  ALL, bệnh nhân 32–33 là AML: Zyxin là một trong các gen phân biệt AML mạnh nhất của bài báo.
+  Hai hàng AFFX cho thấy giá trị âm là bình thường ở probe điều khiển.
+
+
+================================================================================
+2. FILE kaggle/data_set_ALL_AML_independent.csv  (tập kiểm tra độc lập)
+================================================================================
+
+  - Cấu trúc giống hệt file train: 7129 hàng, 70 cột = 2 cột mô tả + 34 x 2.
+  - Hai cột mô tả probe giống hệt file train (cùng thứ tự probe).
+  - Cột biểu hiện là bệnh nhân 39..72, thứ tự lộn xộn:
+        39, 40, 42, 47, 48, 49, 41, 43, 44, 45, 46, 70, 71, 72, 68, 69, 67, 55, 56, 59,
+        52, 53, 51, 50, 54, 57, 58, 60, 61, 65, 66, 63, 64, 62
+    -> bắt buộc ghép theo tên cột.
+  - Thống kê giá trị biểu hiện (34 x 7129 = 242 386 giá trị):
+        min = −26 775; max = 71 369; trung vị = 114
+        âm: 69 999 (28,9%);  < 100: 116 071 (47,9%);  > 16 000: 1 937 (0,8%)
+  - Call: A 172 247 (71,1%)   P 66 244 (27,3%)   M 3 895 (1,6%)
+  - Không có giá trị thiếu.
+  Tổng hai file: 147 174 giá trị âm trên 513 288 giá trị.
+
+  Lưu ý về thiết kế: tập test được thu từ nhiều nguồn và loại mẫu hơn tập train
+  (xem mục 4), nên đây là phép thử độ tổng quát hóa thật sự chứ không chỉ là chia ngẫu nhiên.
+
+  Mẫu dữ liệu
+  Số cột: 2 cột mô tả probe + 34 bệnh nhân x 2 cột (biểu hiện, call) = 70 cột.
+
+  Gene Description                             | Gene Accession Number | 39   | call | 40   | call | 42   | call | ... | 64   | call | 62   | call
+  AFFX-BioB-5_at (endogenous control)          | AFFX-BioB-5_at        | -342 | A    | -87  | A    | 22   | A    | ... |      |      |      |
+  AFFX-BioB-M_at (endogenous control)          | AFFX-BioB-M_at        | -200 | A    | -248 | A    | -153 | A    | ... |      |      |      |
+  CD33 CD33 antigen (differentiation antigen)  | M23197_at             | 168  | A    | 244  | P    | 154  | A    | ... |      |      |      |
+  Zyxin                                        | X95735_at             | 178  | A    | 105  | A    | 92   | A    | ... | 4174 | P    | 7133 | P
+
+  Cách đọc: cột đầu tiên là bệnh nhân 39, rồi 40, rồi 42 (không phải 41), cột cuối là 62:
+  minh họa thứ tự cột lộn xộn. Bệnh nhân 39, 40, 42 là ALL; 62 và 64 là AML. Mẫu Zyxin
+  lặp lại đúng xu hướng của tập train: thấp ở ALL, cao và "P" ở AML.
+
+
+================================================================================
+3. FILE kaggle/actual.csv  (nhãn lớp)
+================================================================================
+
+  72 hàng, 2 cột, không thiếu giá trị.
+
+  [1] patient
+      Kiểu:      số nguyên, 1..72, không trùng
+      Ý nghĩa:   Mã bệnh nhân; khớp với tên cột biểu hiện của hai file Kaggle.
+
+  [2] cancer
+      Kiểu:      chuỗi
+      Giá trị:   ALL = bạch cầu cấp dòng lympho (Acute Lymphoblastic Leukemia)    47 mẫu
+                 AML = bạch cầu cấp dòng tủy (Acute Myeloid Leukemia)             25 mẫu
+      Ý nghĩa:   Chẩn đoán lâm sàng, là BIẾN MỤC TIÊU của bài toán phân loại.
+      Theo tập:  train 27 ALL / 11 AML;  test 20 ALL / 14 AML.
+      Lưu ý:     Dữ liệu mất cân bằng (ALL:AML ≈ 1,9 : 1), cần dùng chỉ số đánh giá phù hợp
+                 (balanced accuracy, AUC) thay vì chỉ accuracy.
+                 Đây là NGUỒN NHÃN CHÍNH; nhãn ở golub.csv chỉ dùng để kiểm tra chéo
+                 (khớp 72/72).
+
+  Mẫu dữ liệu (dòng tiêu đề và vài hàng trích):
+
+  patient | cancer
+  1       | ALL
+  2       | ALL
+  3       | ALL
+  ...
+  32      | AML
+  33      | AML
+  ...
+  62      | AML
+
+
+================================================================================
+4. FILE openintro/golub.csv  (thông tin mẫu + biểu hiện)
+================================================================================
+
+4.1. Cấu trúc chung
+  - 72 hàng, mỗi hàng là MỘT BỆNH NHÂN (đã ở dạng mẫu theo hàng).
+  - 7135 cột = 6 cột mô tả mẫu + 7129 cột biểu hiện (tên cột = mã probe, cùng thứ tự
+    với Gene Accession Number của Kaggle).
+  - Thứ tự hàng: các mẫu test (39..72, cùng thứ tự lộn xộn như file Kaggle) đứng trước,
+    sau đó là các mẫu train (1..27, 34..38, 28..33).
+  - Nhóm chỉ lấy 6 cột mô tả từ file này (quyết định ADR-001 trong docs/decisions.md).
+
+4.2. Mô tả 6 cột mô tả mẫu
+
+  [1] Samples
+      Kiểu:      số nguyên 1..72, không trùng
+      Ý nghĩa:   Mã bệnh nhân; khóa nối với actual.csv và hai file Kaggle.
+
+  [2] BM.PB
+      Kiểu:      chuỗi
+      Giá trị:   BM = Bone Marrow (tủy xương)          62 mẫu
+                 PB = Peripheral Blood (máu ngoại vi)   10 mẫu
+      Ý nghĩa:   Loại mô lấy mẫu.
+      Theo tập:  train 38 BM / 0 PB;  test 24 BM / 10 PB.
+      Lưu ý:     Mô hình được huấn luyện hoàn toàn trên tủy xương nhưng phải dự đoán cả máu
+                 ngoại vi -> biến này cần được xét khi phân tích lỗi dự đoán.
+
+  [3] Gender
+      Kiểu:      chuỗi, có giá trị thiếu
+      Giá trị:   M (nam) 26;  F (nữ) 23;  thiếu (NA) 23
+      Theo tập:  train F 8 / M 15 / NA 15;  test F 15 / M 11 / NA 8.
+      Lưu ý:     Thiếu 32% ở chính nguồn gốc; nhóm KHÔNG tự điền và không dùng làm biến dự báo.
+
+  [4] Source
+      Kiểu:      chuỗi
+      Giá trị:   Cơ sở/nhóm nghiên cứu cung cấp mẫu:
+                 DFCI     (Dana-Farber Cancer Institute)          44 mẫu
+                 CALGB    (Cancer and Leukemia Group B)           15 mẫu
+                 St-Jude  (St. Jude Children's Research Hospital)  8 mẫu
+                 CCG      (Children's Cancer Group)                5 mẫu
+      Phân bố theo tập và lớp (đối chiếu với actual.csv):
+
+                     Nguồn     ALL   AML
+          train      DFCI       27     0
+                     CALGB       0    11
+          test       DFCI       17     0
+                     CALGB       0     4
+                     St-Jude     3     5
+                     CCG         0     5
+
+      Lưu ý QUAN TRỌNG: trong tập train, lớp trùng hoàn toàn với nguồn (mọi ALL từ DFCI,
+      mọi AML từ CALGB). Khác biệt giữa hai lớp vì vậy có thể lẫn với khác biệt giữa hai
+      phòng thí nghiệm (batch effect). Đây là hạn chế thiết kế thí nghiệm của bài báo gốc,
+      được phân tích riêng ở công việc 1.3.
+
+  [5] tissue.mf
+      Kiểu:      chuỗi dạng "<mô>:<giới>"
+      Giá trị:   BM:f 21, BM:m 21, BM:NA 20, PB:m 5, PB:NA 3, PB:f 2
+      Ý nghĩa:   Tổ hợp của BM.PB và Gender, không mang thông tin mới.
+      Xử lý:     Chỉ dùng để kiểm tra chéo hai cột kia (khớp 72/72) rồi bỏ.
+
+  [6] cancer
+      Kiểu:      chuỗi
+      Giá trị:   allB = ALL dòng tế bào B   38 mẫu
+                 allT = ALL dòng tế bào T    9 mẫu
+                 aml  = AML                 25 mẫu
+      Ý nghĩa:   Chẩn đoán chi tiết hơn actual.csv (tách ALL thành phân nhóm con B/T).
+      Đối chiếu: allB + allT = 47 = số ALL của actual.csv; aml = 25 = số AML. Khớp 72/72.
+      Xử lý:     Ghi thành cột subtype (B-ALL / T-ALL / AML); hữu ích cho class discovery
+                 (bài báo gốc phát hiện được ALL-B và ALL-T bằng phân cụm).
+
+4.3. 7129 cột biểu hiện của golub.csv
+      Kiểu:      số thực (float64), không thiếu giá trị
+      Khoảng:    −62 719 đến 139 396
+      Quan hệ với Kaggle: với mỗi mẫu, giá trị ở golub.csv là một phép biến đổi tuyến tính
+                 của giá trị Kaggle (hệ số tương quan = 1,0000; ví dụ mẫu 1: y ≈ 2,34·x − 884).
+                 Sau biến đổi, trung bình của MỌI mẫu đều bằng đúng 619,78, tức OpenIntro đã
+                 chuẩn hóa lại cường độ theo từng chip (re-scaling).
+      Xử lý:     KHÔNG dùng. Nhóm dùng giá trị gốc MAS 4.0 của Kaggle để giữ nguyên ý nghĩa
+                 của ngưỡng [100, 16 000] và tái lập đúng quy trình của bài báo.
+
+4.4. Mẫu dữ liệu
+  Số cột: 6 cột mô tả mẫu + 7129 cột biểu hiện = 7135 cột. Mỗi hàng là một bệnh nhân.
+
+  Samples | BM.PB | Gender | Source | tissue.mf | cancer | AFFX-BioB-5_at | AFFX-BioB-M_at | ... | X95735_at | ...
+  39      | BM    | F      | DFCI   | BM:f      | allB   | -1363.28       | -1058.59       | ... | -247.51   | ...
+  40      | BM    | F      | DFCI   | BM:f      | allB   | -796.29        | -1167.10       | ... | -354.07   | ...
+  70      | PB    | F      | DFCI   | PB:f      | allB   | -672.50        | -647.79        | ... | -452.34   | ...
+  1       | BM    | M      | DFCI   | BM:m      | allB   | -1385.56       | -1242.55       | ... | -185.22   | ...
+  2       | BM    | M      | DFCI   | BM:m      | allT   | -1163.27       | -1021.36       | ... | -204.28   | ...
+  35      | BM    | NaN    | CALGB  | BM:NA     | aml    | -484.00        | -716.72        | ... | 1784.47   | ...
+
+  Cách đọc:
+    - Hàng đầu tiên của file là bệnh nhân 39 (tập test đứng trước tập train).
+    - Bệnh nhân 70 là mẫu máu ngoại vi (PB); bệnh nhân 2 là ALL dòng T; bệnh nhân 35 thiếu
+      giới tính nên tissue.mf = "BM:NA".
+    - So với Kaggle: AFFX-BioB-5_at của bệnh nhân 39 là −342 ở Kaggle nhưng −1363,28 ở đây;
+      đây là minh họa của việc OpenIntro đã biến đổi lại thang đo (mục 4.3).
+
+
+================================================================================
+5. TÓM TẮT CÁC VẤN ĐỀ CỦA DỮ LIỆU RAW VÀ CÁCH XỬ LÝ
+================================================================================
+
+  Vấn đề                                         Cách xử lý (tầng sau)
+  ---------------------------------------------  --------------------------------------------
+  Bố cục probe theo hàng, mẫu theo cột           Xoay ma trận thành 72 x 7129 (load.py)
+  Thứ tự cột bệnh nhân không tăng dần            Ghép theo tên cột/mã bệnh nhân, không theo vị trí
+  Tên cột "call" lặp lại                         Gán call cho cột biểu hiện đứng trước nó
+  Thông tin mẫu và nhãn nằm ở 3 file khác nhau   Nối theo mã bệnh nhân; kiểm tra chéo nhãn 72/72
+  Giá trị âm (28,7%) và < 100                    Cắt ngưỡng dưới 100 (preprocess.py)
+  Giá trị bão hòa > 16 000                       Cắt ngưỡng trên 16 000
+  Phân bố lệch phải, khác cường độ giữa chip     Lấy log10 sau khi cắt ngưỡng
+  58 probe điều khiển AFFX                       Đánh dấu is_control
+  Nhiều probe cho cùng một gen                   Gộp theo Gene Description khi đếm/diễn giải gen
+  Giới tính thiếu 23/72                          Giữ nguyên NA, không dùng làm biến
+  Lớp trùng với nguồn ở tập train                Phân tích batch effect (công việc 1.3)
+  Train chỉ có BM, test có cả PB                 Theo dõi khi phân tích lỗi (công việc 2.5)
+  Mất cân bằng lớp 47:25                         Dùng balanced accuracy / AUC khi đánh giá
+  Biểu hiện golub.csv đã bị chuẩn hóa lại        Chỉ dùng 6 cột mô tả của file này
+
+================================================================================
+6. DANH MỤC TOÀN BỘ 7129 PROBE (phụ lục: docs/report/gene_catalog.csv)
+================================================================================
+
+Bảng phụ lục mô tả từng probe của chip, mỗi hàng một probe, 19 cột. Sinh tự động từ hai file
+Kaggle bằng lệnh `python -m src.gene_catalog` (không sửa tay). Bảng chỉ mô tả dữ liệu, KHÔNG
+dùng nhãn lớp ALL/AML, nên không phải kết quả phân tích gen khác biệt.
+
+6.1. Các cột
+
+  Nhóm định danh
+    probe_id                   Mã probe set (khóa duy nhất), = Gene Accession Number.
+    description                Mô tả gen nguyên văn từ file Kaggle.
+    gene_symbol                Ký hiệu gen (HUGO) tách tự động từ đầu mô tả, ví dụ "CD33".
+                               Để trống khi mô tả không bắt đầu bằng ký hiệu gen.
+    gene_name                  Phần tên gen còn lại sau khi bỏ ký hiệu và tiền tố "GB DEF = ".
+    accession                  Mã truy cập gốc, là probe_id đã bỏ hậu tố (ví dụ X95735).
+    accession_db               Nguồn của mã: GenBank / Affymetrix/TIGR gene cluster (HG...-HT...)
+                               / Affymetrix control (AFFX).
+    probe_type                 Hậu tố loại probe: _at, _s_at, _f_at, _r_at, _st.
+    probe_type_meaning         Diễn giải hậu tố (xem mục 1.2).
+    is_control                 True với 58 probe AFFX.
+    control_group              Nhóm đối chứng: lai (E. coli) / lai (phage P1) /
+                               poly-A (B. subtilis) / gen giữ nhà của người (xem mục 1.3).
+    n_probes_same_description  Số probe có cùng mô tả; > 1 nghĩa là gen được đo bằng
+                               nhiều probe.
+
+  Nhóm thống kê mô tả (trên cả 72 bệnh nhân, thang gốc MAS 4.0, chưa biến đổi)
+    expr_min, expr_median, expr_max   Giá trị nhỏ nhất, trung vị, lớn nhất.
+    pct_negative                      % bệnh nhân có giá trị âm.
+    pct_present, pct_marginal,        % bệnh nhân có call = P / M / A.
+    pct_absent
+    pass_filter_72                    True nếu probe qua bộ lọc Dudoit trên 72 mẫu: sau khi cắt
+                                      về [100, 16 000], max/min > 5 và max − min > 500.
+                                      Đây chính là tập cột của X_log10_filtered.parquet.
+
+6.2. Mẫu dữ liệu (trích, một số cột)
+
+  probe_id                   gene_symbol  gene_name                      probe_type  is_control  control_group          expr_median  pct_present  pass_filter_72
+  X95735_at                               Zyxin                          _at         False                              654.0        37.5         True
+  M23197_at                  CD33         CD33 antigen (differentiation  _at         False                              249.0        44.4         True
+                                          antigen)
+  M16424_at                               BETA-HEXOSAMINIDASE ALPHA      _at         False                              58.5         55.6         True
+                                          CHAIN PRECURSOR
+  HG4333-HT4603_at                        Zinc Finger Protein Znfpt7     _at         False                              128.0        1.4          False
+  AFFX-BioB-5_at                          AFFX-BioB-5_at (endogenous     _at         True        lai (E. coli)          -100.5       0.0          False
+                                          control)
+  AFFX-HUMGAPDH/M33197_5_at               AFFX-HUMGAPDH/M33197_5_at      _at         True        gen giữ nhà của người  14813.0      98.6         True
+                                          (endogenous control)
+
+6.3. Tóm tắt từ danh mục (7071 probe không phải AFFX)
+  - 2923 probe tách được ký hiệu gen, ứng với 2521 ký hiệu khác nhau; 842 probe chỉ có mô tả
+    dạng "GB DEF = ..." (định nghĩa trình tự GenBank, gen chưa được đặt tên khi thiết kế chip).
+  - 1937 probe không bao giờ được gọi P ở bệnh nhân nào; chỉ 327 probe luôn được gọi P;
+    1807 probe được gọi P ở ít nhất một nửa số bệnh nhân.
+  - 3343 probe có trung vị < 100, tức phần lớn thời gian nằm dưới ngưỡng phát hiện.
+  - 3549 probe qua bộ lọc Dudoit. Cộng thêm 22 probe AFFX cũng qua bộ lọc thì được 3571
+    cột của X_log10_filtered.parquet. Nghĩa là tập đã lọc VẪN CÒN 22 probe điều khiển; khi
+    phân tích gen khác biệt cần bỏ chúng bằng cột is_control.
+
+6.4. Giới hạn
+  - gene_symbol được tách bằng quy tắc (chữ in hoa + số ở đầu mô tả, phần sau không viết hoa
+    toàn bộ); một số trường hợp có thể sai (ví dụ "TFIIB related factor hBRF" bị nhận
+    "TFIIB"). Ký hiệu gen là theo chú thích năm 1999, nhiều gen đã được đổi tên về sau.
+  - Bảng không chứa chức năng sinh học của gen. Phần này tra cứu trên NCBI Gene/GeneCards
+    cho các gen được chọn (công việc 2.5).
+
+################################################################################
+PHẦN 2: TẦNG STANDARDIZED (dữ liệu đã chuẩn hóa cấu trúc)
+Thư mục: data/standardized/   Sinh bởi: python -m src.load   (không sửa tay)
+################################################################################
+
+================================================================================
+7. TỔNG QUAN TẦNG STANDARDIZED
+================================================================================
+
+7.1. Mục đích
+  Tầng raw có bốn file với bố cục khác nhau: hai file Kaggle xếp probe theo hàng, mỗi bệnh
+  nhân chiếm hai cột; nhãn nằm ở file thứ ba; thông tin mẫu ở file thứ tư với thứ tự hàng
+  khác. Tầng standardized đưa tất cả về MỘT cấu trúc thống nhất, dễ dùng cho phân tích:
+    - mỗi hàng là một bệnh nhân, mỗi cột là một probe ("dạng gọn" để đưa vào mô hình);
+    - mọi bảng dùng chung khóa sample_id = mã bệnh nhân 1..72, sắp xếp tăng dần;
+    - tách riêng dữ liệu đo (biểu hiện, call) và dữ liệu mô tả (bệnh nhân, probe).
+  Tầng này CHỈ đổi cấu trúc, KHÔNG đổi giá trị: mọi giá trị biểu hiện giống hệt tầng raw.
+
+7.2. Mô hình dữ liệu (lược đồ hình sao)
+
+                       ┌──────────────────────────┐
+                       │ samples.parquet          │  Dim_Sample
+                       │ khóa: sample_id (72)     │  (ai là bệnh nhân, thuộc lớp nào)
+                       └────────────┬─────────────┘
+                                    │ sample_id = chỉ số hàng
+          ┌─────────────────────────┴──────────────────────────┐
+          │ expression.parquet   (bảng sự kiện, 72 x 7129)     │
+          │ calls.parquet        (bảng sự kiện phụ, 72 x 7129) │
+          └─────────────────────────┬──────────────────────────┘
+                                    │ probe_id = tên cột
+                       ┌────────────┴─────────────┐
+                       │ genes.parquet            │  Dim_Gene
+                       │ khóa: probe_id (7129)    │  (probe đo gen gì)
+                       └──────────────────────────┘
+
+  Ở đây bảng sự kiện được lưu dạng ma trận rộng (wide) thay vì dạng dài
+  (sample_id, probe_id, value) vì mô hình học máy cần đúng dạng ma trận mẫu x biến.
+
+  File                Kích thước     Kiểu giá trị     Vai trò
+  ------------------  -------------  ---------------  ---------------------------------------
+  expression.parquet  72 x 7129      int64            Mức biểu hiện gốc MAS 4.0
+  calls.parquet       72 x 7129      chuỗi P/A/M      Kết luận có mặt/vắng mặt; KHÔNG dùng cho mô hình
+  samples.parquet     72 x 6         chuỗi            Thông tin bệnh nhân và nhãn
+  genes.parquet       7129 x 3       chuỗi, bool      Thông tin probe
+
+7.3. Quy trình tạo (src/load.py, theo mục 2.1.2 của kế hoạch)
+  1. Đọc từng file Kaggle, bỏ hai cột mô tả và các cột call, CHUYỂN VỊ để mỗi hàng là một
+     bệnh nhân; tên hàng = mã bệnh nhân lấy từ TÊN CỘT (không theo vị trí cột).
+  2. Gộp train (38) và independent (34) thành 72 hàng, sắp theo mã bệnh nhân; kiểm tra hai
+     file có cùng danh sách 7129 probe theo đúng thứ tự.
+  3. Đọc nhãn từ actual.csv (nguồn nhãn chính, ADR-002).
+  4. Đọc đúng 6 cột mô tả của golub.csv (ADR-001), đổi tên cột, ánh xạ subtype.
+  5. Kiểm tra cả ba nguồn có cùng tập 72 mã bệnh nhân, rồi ghép theo sample_id bằng left
+     join có ràng buộc một–một (mã trùng ở bất kỳ nguồn nào đều báo lỗi).
+  6. Kiểm tra sau ghép: đủ 72 mẫu; không thiếu split/class/subtype/tissue/source;
+     class khớp subtype 72/72; dựng lại tissue.mf từ tissue + sex và so khớp 72/72.
+  7. Kiểm tra kích thước 72 x 7129 và không có NaN, rồi ghi 4 file parquet.
+  Bất kỳ kiểm tra nào thất bại thì dừng và báo mã mẫu lệch, không tự sửa dữ liệu.
+  Đồng thời đối chiếu MD5 của file raw với SOURCES.md (chỉ cảnh báo, không ghi đè, ADR-005).
+
+  Vì sao dùng định dạng parquet: lưu kèm kiểu dữ liệu (int, bool, chuỗi) và chỉ mục nên
+  đọc lại cho kết quả giống hệt, không phải đoán lại kiểu như CSV; lưu theo cột nên đọc
+  một phần cột nhanh. Đổi lại, file không nhỏ hơn (expression.parquet 6,6 MB, trong khi
+  hai CSV raw chứa cả biểu hiện lẫn call chỉ 3,9 MB).
+
+
+================================================================================
+8. FILE expression.parquet  (ma trận biểu hiện)
+================================================================================
+
+8.1. Cấu trúc
+  - 72 hàng x 7129 cột, kiểu int64, không có giá trị thiếu.
+  - Chỉ mục hàng: sample_id (int64), giá trị 1..72, tăng dần.
+  - Tên cột: probe_id, cùng thứ tự với genes.parquet (AFFX-BioB-5_at, AFFX-BioB-M_at, ...).
+  - Giá trị: GIỐNG HỆT tầng raw (thang MAS 4.0, có giá trị âm). Mọi thống kê ở mục 1.2, 2
+    và bảng phân bố dưới đây vẫn đúng.
+
+8.2. Ý nghĩa và khoảng giá trị
+  Mỗi ô = mức biểu hiện của một probe (cột) ở một bệnh nhân (hàng), tính bằng trung bình
+  (PM − MM) của các cặp probe; đơn vị tùy ý, chỉ so sánh tương đối.
+
+  Phân vị trên toàn bộ 72 x 7129 = 513 288 giá trị:
+    min −28 400 | 1%: −982 | 25%: −21 | trung vị: 120 | 75%: 440 | 95%: 2 275
+    | 99%: 14 750 | max 71 369
+
+  Vùng giá trị      Tỷ lệ    Diễn giải
+  ----------------  -------  ----------------------------------------------
+  < 0               28,7%    không phát hiện được (nhiễu MM > tín hiệu PM)
+  0 – 100           18,3%    dưới ngưỡng tin cậy, chủ yếu là nhiễu
+  100 – 1 000       41,2%    biểu hiện thấp đến trung bình
+  1 000 – 16 000    10,9%    biểu hiện cao
+  > 16 000           0,8%    máy quét bão hòa, giá trị không còn chính xác
+
+  Probe có trung vị cao nhất là các gen ribosome (RPL37A, RPLP0, RPS8...) và HLA-B, khoảng
+  23 000–25 000: gen "giữ nhà" biểu hiện rất mạnh ở mọi tế bào. Phân bố lệch phải mạnh
+  (trung vị 120, tối đa 71 369) là lý do tầng curated cắt ngưỡng rồi lấy log10.
+
+8.3. Mẫu dữ liệu
+
+  sample_id | AFFX-BioB-5_at | AFFX-BioB-M_at | ... | M23197_at (CD33) | ... | X95735_at (Zyxin) | ...
+  1         | -214           | -153           | ... | 261              | ... | 298               | ...
+  2         | -139           | -73            | ... | 101              | ... | 307               | ...
+  3         | -76            | -49            | ... | 309              | ... | 309               | ...
+  4         | -135           | -114           | ... | 288              | ... | 693               | ...
+
+  So với tầng raw (mục 1.4): cùng các con số, nhưng hàng và cột đã đổi chỗ cho nhau, và
+  bệnh nhân luôn theo thứ tự 1, 2, 3, ... (ở raw là 1..27, 34..38, 28..33).
+
+  Cách dùng:
+    from src.load import load_golub
+    X, samples = load_golub("standardized")   # X: 72 x 7129, samples: 72 x 6, cùng thứ tự hàng
+
+
+================================================================================
+9. FILE calls.parquet  (kết luận có mặt/vắng mặt)
+================================================================================
+
+  - 72 hàng x 7129 cột, cùng chỉ mục và thứ tự cột với expression.parquet.
+  - Giá trị: chuỗi một ký tự P (Present – có mặt), A (Absent – vắng mặt),
+    M (Marginal – không rõ); với dữ liệu hiện tại không có giá trị thiếu.
+  - Phân bố trên 513 288 ô: A 360 139 (70,2%) | P 144 876 (28,2%) | M 8 273 (1,6%).
+  - Ô (i, j) của calls.parquet là kết luận cho đúng ô (i, j) của expression.parquet;
+    ở raw, cặp này nằm ở hai cột liền nhau "k" và "call".
+
+  Mẫu dữ liệu:
+  sample_id | AFFX-BioB-5_at | AFFX-BioB-M_at | ... | M23197_at | ... | X95735_at | ...
+  1         | A              | A              | ... | A         | ... | A         | ...
+  2         | A              | A              | ... | A         | ... | A         | ...
+
+  Vì sao không dùng cho mô hình: call là kết quả rời rạc suy ra từ chính giá trị biểu hiện
+  (mục 1.2: trung vị P ≈ 695, A ≈ 37), nên không thêm thông tin mới mà làm mất độ chi tiết.
+  File được giữ lại cho đầy đủ và để tham khảo khi diễn giải một gen (gen được chọn mà
+  hầu hết là "A" thì cần thận trọng).
+
+
+================================================================================
+10. FILE samples.parquet  (Dim_Sample — thông tin bệnh nhân)
+================================================================================
+
+10.1. Cấu trúc
+  72 hàng, chỉ mục sample_id (int64, 1..72), 6 cột kiểu chuỗi, theo thứ tự:
+  split, class, subtype, tissue, source, sex.
+  Ghép từ ba nguồn raw theo mã bệnh nhân:
+    split   <- vị trí file Kaggle (train/independent)   (ADR-003)
+    class   <- actual.csv: cancer                       (ADR-002, nguồn nhãn chính)
+    subtype, tissue, source, sex <- golub.csv            (ADR-001)
+  Cột tissue.mf của golub.csv chỉ dùng để kiểm tra chéo (khớp 72/72) rồi bỏ.
+
+10.2. Mô tả từng cột
+
+  [1] split
+      Kiểu / giá trị:  chuỗi; "train" (sample_id 1..38) hoặc "test" (39..72)
+      Nguồn:           file Kaggle chứa bệnh nhân đó (data_set_ALL_AML_train.csv
+                       hay data_set_ALL_AML_independent.csv)
+      Ý nghĩa:         cách chia của bài báo gốc. Tập train dùng để chọn gen và huấn luyện;
+                       tập test chỉ dùng một lần để đánh giá cuối cùng.
+      Lưu ý:           gán theo file, không theo thứ tự cột trong file.
+
+  [2] class
+      Kiểu / giá trị:  chuỗi; "ALL" (47) hoặc "AML" (25)
+      Nguồn:           actual.csv, cột cancer (chuẩn hóa chữ hoa, bỏ khoảng trắng)
+      Ý nghĩa:         BIẾN MỤC TIÊU của bài toán phân loại; lớp dương khi tính
+                       sensitivity/specificity là AML (src/config.py).
+      Phân bố:         train 27 ALL / 11 AML;  test 20 ALL / 14 AML.
+
+  [3] subtype
+      Kiểu / giá trị:  chuỗi; "B-ALL" (38), "T-ALL" (9), "AML" (25)
+      Nguồn:           golub.csv, cột cancer; ánh xạ allB -> B-ALL, allT -> T-ALL, aml -> AML
+      Ý nghĩa:         phân nhóm con chi tiết hơn class: ALL được tách theo dòng tế bào
+                       lympho B hoặc T.
+      Ràng buộc:       B-ALL và T-ALL thuộc class ALL; AML thuộc class AML (khớp 72/72).
+      Phân bố theo tập:
+                       train: B-ALL 19, T-ALL 8, AML 11
+                       test:  B-ALL 19, T-ALL 1, AML 14
+      Lưu ý:           gần như toàn bộ T-ALL (8/9) nằm ở tập train; tập test chỉ có 1 T-ALL,
+                       nên không đánh giá được riêng khả năng nhận diện T-ALL trên test.
+                       Cột này dùng cho class discovery (công việc 1.5), không dùng làm nhãn
+                       phân loại.
+
+  [4] tissue
+      Kiểu / giá trị:  chuỗi; "BM" (tủy xương, 62) hoặc "PB" (máu ngoại vi, 10)
+      Nguồn:           golub.csv, cột BM.PB
+      Ý nghĩa:         loại mô lấy mẫu.
+      Phân bố:         train 38 BM / 0 PB;  test 24 BM / 10 PB (6 ALL + 4 AML là PB).
+      Lưu ý:           mô hình chỉ học trên tủy xương nhưng phải dự đoán cả máu ngoại vi;
+                       cần xét biến này khi phân tích mẫu dự đoán sai (công việc 2.5).
+
+  [5] source
+      Kiểu / giá trị:  chuỗi; "DFCI" (44), "CALGB" (15), "St-Jude" (8), "CCG" (5)
+      Nguồn:           golub.csv, cột Source
+      Ý nghĩa:         cơ sở/nhóm nghiên cứu cung cấp mẫu:
+                         DFCI    – Dana-Farber Cancer Institute
+                         CALGB   – Cancer and Leukemia Group B
+                         St-Jude – St. Jude Children's Research Hospital
+                         CCG     – Children's Cancer Group
+      Phân bố theo tập và lớp:
+                                 CALGB  CCG  DFCI  St-Jude
+                       train ALL     0    0    27        0
+                       train AML    11    0     0        0
+                       test  ALL     0    0    17        3
+                       test  AML     4    5     0        5
+
+  [6] sex
+      Kiểu / giá trị:  chuỗi; "M" (26), "F" (23), thiếu (NaN, 23)
+      Nguồn:           golub.csv, cột Gender
+      Phân bố:         train F 8 / M 15 / thiếu 15;  test F 15 / M 11 / thiếu 8.
+      Lưu ý:           là cột DUY NHẤT được phép thiếu. Thiếu ở chính nguồn gốc nên không tự
+                       điền; không dùng làm biến dự báo.
+
+10.3. Điểm quan trọng về thiết kế thí nghiệm
+  - Trong tập train, LỚP TRÙNG HOÀN TOÀN VỚI NGUỒN: cả 27 ALL đến từ DFCI, cả 11 AML đến từ
+    CALGB. Không có cách nào tách được "khác biệt do bệnh" và "khác biệt do nơi lấy mẫu/xử
+    lý mẫu" chỉ từ tập train. Đây là nguy cơ batch effect, được phân tích ở công việc 1.3.
+  - Hệ quả cho phân tích gen khác biệt và chọn biến: một gen "khác biệt giữa ALL và AML"
+    trên tập train có thể một phần phản ánh khác biệt giữa hai phòng thí nghiệm. Cách kiểm
+    tra: xem gen đó có giữ được khác biệt trên tập test không, nơi St-Jude cung cấp cả ALL
+    lẫn AML (3 ALL + 5 AML cùng một nguồn).
+  - Tập test khác tập train về phân bố: thêm nguồn mới (St-Jude, CCG), thêm loại mô mới (PB),
+    tỷ lệ AML cao hơn (41% so với 29%). Kết quả trên test vì vậy là phép thử độ tổng quát
+    hóa thực sự.
+  - Dữ liệu mất cân bằng lớp (47 ALL : 25 AML), nên đánh giá bằng balanced accuracy hoặc
+    AUC bên cạnh accuracy.
+
+10.4. Mẫu dữ liệu
+
+  sample_id | split | class | subtype | tissue | source  | sex
+  1         | train | ALL   | B-ALL   | BM     | DFCI    | M
+  2         | train | ALL   | T-ALL   | BM     | DFCI    | M
+  21        | train | ALL   | B-ALL   | BM     | DFCI    | M
+  28        | train | AML   | AML     | BM     | CALGB   | NaN
+  39        | test  | ALL   | B-ALL   | BM     | DFCI    | F
+  62        | test  | AML   | AML     | PB     | CCG     | M
+  70        | test  | ALL   | B-ALL   | PB     | DFCI    | F
+
+  (Mẫu 21 là mẫu bị gắn cờ qc_outlier ở tầng cleansed; mẫu 28 thiếu giới tính; mẫu 62 và 70
+  là máu ngoại vi.)
+
+
+================================================================================
+11. FILE genes.parquet  (Dim_Gene — thông tin probe)
+================================================================================
+
+11.1. Cấu trúc
+  7129 hàng (mỗi hàng một probe), 3 cột, chỉ mục số thứ tự 0..7128; thứ tự hàng trùng thứ
+  tự cột của expression.parquet và calls.parquet.
+
+  Cột          Kiểu    Mô tả
+  -----------  ------  ------------------------------------------------------------------
+  probe_id     chuỗi   Mã probe set Affymetrix, khóa duy nhất (= Gene Accession Number ở
+                       raw = tên cột của expression.parquet). Cấu tạo: mã GenBank/cụm gen +
+                       hậu tố loại probe (_at, _s_at, _f_at, _r_at, _st), xem mục 1.2.
+  description  chuỗi   Mô tả gen nguyên văn (= Gene Description ở raw). Không duy nhất:
+                       926 probe dùng chung 424 mô tả.
+  is_control   bool    True khi probe_id bắt đầu bằng "AFFX" (58 probe điều khiển, mục 1.3);
+                       False với 7071 probe còn lại.
+
+11.2. Mẫu dữ liệu
+
+  probe_id        | description                                  | is_control
+  AFFX-BioB-5_at  | AFFX-BioB-5_at (endogenous control)          | True
+  AFFX-BioB-M_at  | AFFX-BioB-M_at (endogenous control)          | True
+  M23197_at       | CD33 CD33 antigen (differentiation antigen)  | False
+  X95735_at       | Zyxin                                        | False
+
+11.3. Lưu ý khi dùng
+  - Khi đếm "số gen" hoặc so sánh danh sách gen với bài báo, phải gộp theo description
+    (một gen có thể có nhiều probe), và bỏ các probe is_control = True.
+  - Bảng phụ lục gene_catalog.csv (mục 6) mở rộng bảng này với ký hiệu gen, loại probe,
+    nhóm đối chứng và thống kê mô tả của từng probe.
+
+
+================================================================================
+12. TÓM TẮT: TỪ RAW SANG STANDARDIZED
+================================================================================
+
+  Tầng raw                                      Tầng standardized
+  --------------------------------------------  ------------------------------------------
+  2 file biểu hiện, probe theo hàng             1 ma trận 72 x 7129, bệnh nhân theo hàng
+  Mỗi bệnh nhân 2 cột (giá trị, call)           Tách thành expression.parquet và calls.parquet
+  Thứ tự bệnh nhân lộn xộn                      sample_id tăng dần 1..72 ở mọi bảng
+  Nhãn ở actual.csv, thông tin mẫu ở golub.csv  Gộp vào samples.parquet, cùng khóa sample_id
+  Tên cột gốc (BM.PB, Gender, Source, cancer)   Tên thống nhất (tissue, sex, source, subtype)
+  allB / allT / aml                             B-ALL / T-ALL / AML
+  tissue.mf trùng thông tin                     Kiểm tra chéo rồi bỏ
+  Probe điều khiển lẫn trong danh sách          Đánh dấu bằng cột is_control
+  Giá trị biểu hiện                             KHÔNG ĐỔI (vẫn thang MAS 4.0, có số âm)
+
+  Các bước biến đổi giá trị (threshold, log10, lọc gen, chuẩn hóa) thuộc tầng curated
+  (công việc 1.2), không nằm ở tầng này.
+
+
+################################################################################
+PHẦN 3: TẦNG CLEANSED (dữ liệu đã kiểm tra chất lượng)
+Thư mục: data/cleansed/   Sinh bởi: python -m src.quality   (không sửa tay)
+################################################################################
+
+================================================================================
+13. TỔNG QUAN TẦNG CLEANSED
+================================================================================
+
+13.1. Mục đích
+  Kiểm tra chất lượng dữ liệu của tầng standardized trước khi phân tích, theo 4 mức (mục 2.5,
+  Bảng 2.9 của kế hoạch), và ghi lại kết quả. Nguyên tắc (ADR-004):
+    - KHÔNG sửa, KHÔNG xóa giá trị biểu hiện nào;
+    - mẫu bất thường chỉ được GẮN CỜ, không bị loại, vì chưa có căn cứ sinh học/kỹ thuật
+      để loại; người phân tích tự quyết định và có thể so sánh kết quả có/không có mẫu đó;
+    - nếu có kiểm tra FAIL thì dừng pipeline và xóa file cleansed cũ (ADR-006), để không ai
+      đọc nhầm dữ liệu chưa đạt.
+
+13.2. Các file
+
+  File                Kích thước   Nội dung
+  ------------------  -----------  -----------------------------------------------------------
+  expression.parquet  72 x 7129    BẢN SAO NGUYÊN VẸN của standardized/expression.parquet
+                                   (đã kiểm tra: giống hệt từng giá trị)
+  samples.parquet     72 x 7       6 cột như standardized + cột qc_outlier
+  quality_report.md   —            báo cáo kết quả 4 mức kiểm tra, dạng [PASS]/[FAIL]/[INFO]
+
+  Tầng này không có genes.parquet; thông tin probe vẫn đọc từ tầng standardized.
+
+13.3. Bốn mức kiểm tra và kết quả hiện tại (trích quality_report.md — Kết luận: ĐẠT)
+
+  Mức Value (từng giá trị)
+    [PASS] không có giá trị khuyết (NaN = 0); kiểu int64
+    [INFO] 241 357 giá trị < 100; 4 259 giá trị > 16 000; 147 174 giá trị âm
+           -> không sửa ở đây, xử lý bằng threshold ở tầng curated
+
+  Mức Value-set (tập giá trị hợp lệ)
+    [PASS] tissue ∈ {BM, PB};  source ∈ {CALGB, CCG, DFCI, St-Jude};
+           subtype ∈ {AML, B-ALL, T-ALL};  sex ∈ {F, M}
+    [INFO] 23/72 mẫu thiếu sex (thiếu ở nguồn, không tự điền)
+    [INFO] 58 probe AFFX giữ lại, đánh dấu is_control
+    [INFO] 926 probe thuộc 424 mô tả trùng
+
+  Mức Record (từng bản ghi/mẫu)
+    [PASS] kích thước 72 x 7129; không trùng sample_id; không trùng probe_id
+    [PASS] không có cặp mẫu trùng lặp (tương quan > 0,99)
+    [INFO] tương quan trung vị giữa các mẫu: thấp nhất 0,756 (mẫu 21), trung vị chung 0,832
+    [INFO] 1 mẫu gắn cờ qc_outlier: mẫu 21
+
+  Mức Relation (quan hệ giữa các bảng)
+    [PASS] biểu hiện và bảng mẫu cùng chỉ mục sample_id, cùng thứ tự
+    [PASS] nhãn class (Kaggle) khớp subtype (OpenIntro) 72/72
+    [PASS] split x class x source khớp Bảng 2.4 của kế hoạch
+    [PASS] split x tissue khớp Bảng 2.4 (train 38 BM; test 24 BM + 10 PB)
+    [PASS] B-ALL + T-ALL = 47, AML = 25
+
+
+================================================================================
+14. CỘT MỚI qc_outlier VÀ CÁCH PHÁT HIỆN MẪU BẤT THƯỜNG
+================================================================================
+
+14.1. Mô tả cột
+  [7] qc_outlier
+      Kiểu:      bool
+      Giá trị:   True (1 mẫu: mẫu 21) / False (71 mẫu)
+      Ý nghĩa:   mẫu có dấu hiệu bất thường về kỹ thuật so với các mẫu còn lại; chỉ là cờ
+                 cảnh báo, mẫu vẫn nằm trong mọi ma trận.
+
+14.2. Cách tính (src/quality.py)
+  Để so sánh công bằng, mỗi mẫu được đưa tạm về thang log10 sau khi cắt [100, 16 000] (chỉ
+  dùng để đo; giá trị ghi ra vẫn là giá trị gốc). Một mẫu bị gắn cờ khi có ÍT NHẤT MỘT dấu
+  hiệu sau:
+    a) Tương quan trung vị với các mẫu còn lại thấp bất thường: chip lỗi hoặc RNA kém thì
+       hình dạng biểu hiện khác hẳn mọi mẫu khác. Chỉ xét phía thấp.
+    b) Trung vị hoặc IQR (độ trải giữa phân vị 25 và 75) của mẫu lệch hẳn so với các mẫu
+       khác, theo cả hai phía; tương ứng với một hộp lệch trên biểu đồ boxplot theo mẫu.
+    c) Trùng lặp với một mẫu khác: tương quan > 0,99 (có thể cùng một chip bị nạp hai lần).
+  "Lệch hẳn" được đo bằng modified z-score:
+        z = 0,6745 x (x − trung vị) / MAD,   MAD = trung vị của |x − trung vị|
+  và gắn cờ khi |z| > 3,5 (Iglewicz & Hoaglin, 1993). Dùng trung vị/MAD thay cho trung
+  bình/độ lệch chuẩn vì chính mẫu bất thường sẽ kéo trung bình và độ lệch chuẩn về phía nó,
+  làm nó trông bớt bất thường.
+
+14.3. Kết quả: mẫu 21
+  - Bệnh nhân 21: tập train, ALL, B-ALL, tủy xương, DFCI, nam.
+  - Tương quan trung vị với các mẫu khác r = 0,756, trong khi trung vị chung là 0,832;
+    z = −4,7 (vượt ngưỡng −3,5). Không vi phạm dấu hiệu (b) hay (c).
+  - Trên thang log10, giá trị của mẫu này dồn mạnh về mức sàn: trung vị đúng bằng 2,0
+    (= ngưỡng 100), tức hơn một nửa số probe của mẫu dưới ngưỡng phát hiện.
+  - Gợi ý sử dụng: chạy các phân tích chính có và không có mẫu 21 để kiểm tra kết luận
+    có bị ảnh hưởng không; theo dõi mẫu này khi phân tích lỗi dự đoán.
+
+14.4. Mẫu dữ liệu samples.parquet (tầng cleansed)
+
+  sample_id | split | class | subtype | tissue | source | sex | qc_outlier
+  20        | train | ALL   | B-ALL   | BM     | DFCI   | NaN | False
+  21        | train | ALL   | B-ALL   | BM     | DFCI   | M   | True
+  22        | train | ALL   | B-ALL   | BM     | DFCI   | M   | False
+
+  Cách dùng:
+    X, samples = load_golub("cleansed")      # mặc định của load_golub()
+    samples[samples["qc_outlier"]]          # liệt kê mẫu bị gắn cờ
+
+
+################################################################################
+PHẦN 4: TẦNG CURATED (dữ liệu sẵn sàng phân tích)
+Thư mục: data/curated/   Sinh bởi: python -m src.preprocess   (công việc 1.2 — TV3)
+################################################################################
+
+================================================================================
+15. TỔNG QUAN TẦNG CURATED
+================================================================================
+
+15.1. Mục đích
+  Biến đổi giá trị biểu hiện từ thang MAS 4.0 thô sang thang phù hợp cho thống kê và học
+  máy, theo quy trình của Dudoit, Fridlyand & Speed (2002), đồng thời tách bạch phần nào
+  được làm sẵn cho cả 72 mẫu và phần nào phải làm trong Pipeline để tránh rò rỉ dữ liệu.
+
+15.2. Bốn bước tiền xử lý
+
+  Bước  Phép biến đổi                        Có học từ dữ liệu?  Làm ở đâu
+  ----  -----------------------------------  ------------------  ---------------------------
+  1     Threshold: < 100 -> 100,             Không               Sẵn trong X_log10.parquet
+        > 16 000 -> 16 000                                       (áp cho cả 72 mẫu)
+  2     log10                                Không               Sẵn trong X_log10.parquet
+  3     Lọc gen: giữ gen có max/min > 5      CÓ (tập gen phụ     Trong Pipeline (GeneFilter),
+        và max − min > 500 (thang gốc)        thuộc mẫu dùng     chỉ fit trên phần train;
+                                              để tính)           bản lọc sẵn chỉ cho EDA
+  4     Chuẩn hóa từng gen: trung bình 0,    CÓ (trung bình,     Trong Pipeline
+        độ lệch chuẩn 1                       độ lệch chuẩn)     (StandardScaler)
+
+  Lý do từng bước:
+    1) Dưới 100 là vùng nhiễu, mọi giá trị ở đó đều mang nghĩa "không phát hiện được" nên
+       gộp về một mức; trên 16 000 máy quét bão hòa nên chặn lại. Bước này cũng loại toàn
+       bộ giá trị âm, nhờ đó lấy được log.
+    2) Phân bố gốc lệch phải rất mạnh (trung vị 120, tối đa 71 369). Sau log10, chênh lệch
+       "gấp 10 lần" trở thành chênh 1 đơn vị, phân bố cân đối hơn, và các phép so sánh
+       giữa hai lớp trở thành phép trừ.
+    3) Bỏ gen gần như không biểu hiện hoặc không thay đổi giữa các bệnh nhân, vì chúng không
+       giúp phân biệt lớp mà chỉ thêm nhiễu và tăng số chiều.
+    4) Đưa mọi gen về cùng thang để các mô hình dựa trên khoảng cách hoặc hệ số (SVM,
+       LASSO, kNN) không bị chi phối bởi gen có giá trị lớn.
+
+15.3. Vì sao bước 3–4 phải nằm trong Pipeline (chống rò rỉ dữ liệu)
+  Bước 1–2 áp riêng cho từng giá trị, kết quả của một mẫu không phụ thuộc mẫu khác, nên làm
+  sẵn cho cả 72 mẫu là an toàn. Bước 3–4 thì khác: tập gen giữ lại và trung bình/độ lệch
+  chuẩn được TÍNH từ các mẫu đưa vào. Thực tế:
+        lọc trên cả 72 mẫu   -> giữ 3 571 gen
+        lọc chỉ trên 38 mẫu train -> giữ 3 052 gen
+  Nếu dùng bản lọc trên 72 mẫu để huấn luyện, thông tin của tập test đã "lọt" vào bước chọn
+  gen (selection bias) và kết quả đánh giá sẽ lạc quan hơn thực tế. Vì vậy mô hình phải đọc
+  X_log10 và đặt make_preprocess() = GeneFilter() -> StandardScaler() trong Pipeline, để
+  hai bước này được fit lại trên phần train của từng fold.
+
+
+================================================================================
+16. CÁC FILE CỦA TẦNG CURATED
+================================================================================
+
+  File                       Kích thước    Kiểu     Dùng cho
+  -------------------------  ------------  -------  ------------------------------------------
+  X_log10.parquet            72 x 7129     float64  ĐẦU VÀO CỦA MỌI MÔ HÌNH
+  X_log10_filtered.parquet   72 x 3571     float64  CHỈ cho EDA, phân cụm, phân tích gen khác biệt
+  samples.parquet            72 x 7        chuỗi,   bảng mẫu, giống hệt tầng cleansed
+                                           bool     (có qc_outlier), cùng thứ tự hàng
+  preprocess_params.json     —             JSON     tham số đã dùng, để tái lập
+
+16.1. X_log10.parquet
+  - Chỉ mục hàng sample_id 1..72; cột là 7129 probe_id, cùng thứ tự với genes.parquet.
+  - Giá trị = log10(cắt về [100, 16 000] của giá trị gốc), nên nằm trong [2,000; 4,204]:
+        2,000 = log10(100)   (mức sàn, "không phát hiện được")
+        4,204 = log10(16 000) (mức trần, bão hòa)
+  - Phân bố: 25%: 2,000 | trung vị: 2,079 | 75%: 2,643 | 95%: 3,357 | max: 4,204
+  - 47,2% số ô nằm đúng ở mức sàn 2,0 (tức gốc < 100); 0,8% nằm ở mức trần.
+  - Đọc giá trị: chênh 1 đơn vị = chênh 10 lần về mức biểu hiện; chênh 0,3 ≈ gấp 2 lần.
+
+  Mẫu dữ liệu (so với tầng standardized ở mục 8.3):
+
+  sample_id | class | AFFX-BioB-5_at   | M23197_at (CD33)  | X95735_at (Zyxin)
+  1         | ALL   | 2.000  (gốc −214)| 2.417  (gốc 261)  | 2.474  (gốc 298)
+  2         | ALL   | 2.000  (gốc −139)| 2.004  (gốc 101)  | 2.487  (gốc 307)
+  3         | ALL   | 2.000  (gốc −76) | 2.490  (gốc 309)  | 2.490  (gốc 309)
+  32        | AML   | 2.000            | 2.889             | 3.518  (gốc 3 297)
+  33        | AML   | 2.000            | 2.646             | 3.542  (gốc 3 482)
+
+  Cách đọc: probe điều khiển BioB âm ở mọi mẫu nên bị đưa hết về sàn 2,0. Zyxin ở bệnh nhân
+  AML (≈ 3,5) cao hơn bệnh nhân ALL (≈ 2,5) khoảng 1 đơn vị, tức gấp khoảng 10 lần.
+
+  Cách dùng cho mô hình:
+    from src.load import load_golub
+    from src.preprocess import make_preprocess
+    X, samples = load_golub("curated")             # X = X_log10, 72 x 7129
+    pipe = Pipeline([("pre", make_preprocess()), ("select", ...), ("clf", ...)])
+
+16.2. X_log10_filtered.parquet
+  - Cùng giá trị với X_log10 nhưng chỉ giữ 3 571 probe qua bộ lọc tính trên cả 72 mẫu;
+    đúng bằng con số 3 571 gen của Dudoit et al. (2002).
+  - Phân bố: 25%: 2,173 | trung vị: 2,584 | 75%: 2,914 | 95%: 3,475; chỉ 19,6% số ô ở mức
+    sàn (so với 47,2% của X_log10) vì gen "luôn dưới ngưỡng" đã bị loại.
+  - Vẫn còn 22 probe điều khiển AFFX qua bộ lọc (20 probe gen giữ nhà như GAPDH,
+    beta-actin và 2 probe đối chứng lai E. coli); 3 549 probe còn lại là gen người. Khi phân tích gen khác biệt cần bỏ
+    22 probe này bằng cột is_control.
+  - Danh sách probe qua lọc có thể tra trong gene_catalog.csv (cột pass_filter_72).
+  - KHÔNG dùng để huấn luyện hay đánh giá mô hình (xem 15.3).
+
+16.3. samples.parquet
+  Bản sao của cleansed/samples.parquet (7 cột, gồm qc_outlier), lưu kèm để load_golub
+  ("curated") trả về ma trận và bảng mẫu cùng thứ tự hàng.
+
+16.4. preprocess_params.json
+  Ghi lại tham số để tái lập và để kiểm tra chéo:
+    "threshold": [100, 16000]
+    "transform": "log10"
+    "filter": {"max_over_min_gt": 5, "max_minus_min_gt": 500, "scale": "raw (10**X)"}
+    "n_genes_in": 7129
+    "n_genes_filtered_all72": 3571
+    "n_genes_filtered_train38": 3052
+  ("scale": "raw (10**X)" nghĩa là điều kiện lọc được tính trên thang gốc sau threshold,
+  không phải trên thang log.)
+
+
+================================================================================
+17. HỆ QUẢ CHO CÁC CÔNG VIỆC PHÂN TÍCH
+================================================================================
+
+  Công việc                             Đọc dữ liệu nào
+  ------------------------------------  ---------------------------------------------------
+  EDA, giảm chiều, phân cụm             X_log10_filtered (có thể bỏ probe AFFX)
+  Phân tích gen khác biệt (1.6)         X_log10_filtered, chỉ 38 mẫu train, bỏ 22 probe AFFX
+  Huấn luyện / đánh giá mô hình         X_log10 + make_preprocess() trong Pipeline
+  Chọn biến (2.2)                       X_log10; bộ chọn biến đặt sau make_preprocess()
+  Diễn giải gen                         genes.parquet / gene_catalog.csv, gộp theo mô tả
+  Kiểm tra độ vững                      chạy lại có và không có mẫu qc_outlier
+
+
+================================================================================
+18. TÓM TẮT: TỪ CLEANSED SANG CURATED
+================================================================================
+
+  Tầng cleansed                           Tầng curated
+  --------------------------------------  ---------------------------------------------
+  Giá trị gốc MAS 4.0, int, có số âm      log10 sau threshold, float, trong [2,0; 4,204]
+  Khoảng −28 400 đến 71 369               Khoảng 2,000 đến 4,204
+  7129 probe                              7129 (X_log10) hoặc 3571 (X_log10_filtered)
+  Không có tham số tiền xử lý             preprocess_params.json ghi lại tham số
+  Bước 3–4 chưa làm                       Cung cấp make_preprocess() để làm trong Pipeline
+
+
+################################################################################
+PHẦN 5: TẦNG SANDBOX VÀ TỔNG KẾT
+################################################################################
+
+================================================================================
+19. TẦNG SANDBOX — data/sandbox/
+================================================================================
+
+  - Vùng nháp riêng của từng thành viên (ví dụ data/sandbox/TV4/) để lưu kết quả trung
+    gian khi thử nghiệm.
+  - Không có cấu trúc cố định, không được tầng nào khác đọc, không đưa lên Git; hiện đang
+    trống.
+  - Kết quả chính thức không để ở đây mà ghi vào results/ (gene_lists, metrics, figures).
+
+
+================================================================================
+20. TỔNG KẾT TOÀN BỘ CÁC TẦNG
+================================================================================
+
+  raw ──src.load──> standardized ──src.quality──> cleansed ──src.preprocess──> curated
+  (4 file gốc)      (đổi cấu trúc)               (kiểm tra,                   (threshold,
+                                                  gắn cờ)                      log10, lọc)
+
+  Tầng          Ma trận biểu hiện           Bảng mẫu          Thay đổi so với tầng trước
+  ------------  --------------------------  ----------------  ---------------------------------
+  raw           2 CSV, 7129 x (38|34) x 2   actual.csv +      —
+                                            golub.csv
+  standardized  72 x 7129, int, có số âm    72 x 6            xoay ma trận, ghép theo
+                                                              sample_id, tách 4 bảng
+  cleansed      72 x 7129, giống hệt trên   72 x 7            thêm qc_outlier, quality_report
+  curated       72 x 7129 (log10) và        72 x 7            threshold + log10; bản lọc
+                72 x 3571 (lọc, chỉ EDA)                      3571 gen cho EDA
+
+  Nguyên tắc chung:
+    - Mỗi tầng chỉ sinh từ tầng ngay trước bằng code; không sửa tay file nào.
+    - Mọi bảng dùng chung khóa sample_id (1..72) và probe_id.
+    - Không xóa mẫu nào ở bất kỳ tầng nào; mẫu bất thường chỉ được gắn cờ.
+    - Bước nào học từ dữ liệu (lọc gen, chuẩn hóa, chọn biến) phải nằm trong Pipeline.
+
+
+Tài liệu tham khảo
+  - Golub T.R. et al. (1999). Molecular classification of cancer: class discovery and class
+    prediction by gene expression monitoring. Science 286:531–537.
+  - Dudoit S., Fridlyand J., Speed T.P. (2002). Comparison of discrimination methods for the
+    classification of tumors using gene expression data. JASA 97:77–87.
+  - Affymetrix (1999). GeneChip Expression Analysis — Algorithm Description (MAS 4.0).
+  - Iglewicz B., Hoaglin D.C. (1993). How to Detect and Handle Outliers. ASQC Quality Press.
