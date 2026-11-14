@@ -165,6 +165,62 @@ tái lập được và truy ngược về nguồn.
   - `tests/test_interfaces.py` khóa tên hàm dùng chung; đổi tên thì ghi ADR và sửa test cùng lúc.
 - **Hệ quả:** kế hoạch, phân công và hạn giai đoạn 2 nằm trong tài liệu "Kế hoạch giai đoạn 2 (hướng mới)".
 
+## ADR-050 — Quy ước của `src/features.py` (công việc 2.2, bản 1; đã thay thế bởi ADR-051)
+- **Ngày:** 01/11/2026 · **Người quyết định:** TV4
+- **Giao diện:** 6 bộ chọn `snr, ttest, lasso, enet, rf, svm_rfe` (đúng tên trong `experiment_config.yaml`),
+  tạo bằng `make_selector(tên, k, **params)`. Mỗi bộ chọn kế thừa `SelectorMixin` + `BaseEstimator` để
+  `clone()` được và để `evaluate.py` cắt Pipeline tại bước chọn gen (`wrong_cv`). Đặt ở bước tên `select`:
+  `GeneFilter → StandardScaler → select → bộ phân loại`. Nhãn nhận `"ALL"/"AML"` hoặc 0/1 (1 = AML).
+- **Luôn trả về đúng k gen** (k > số gen thì giữ tất cả), để mỗi ô của thí nghiệm giai thừa so cùng số gen.
+- **snr, ttest chọn cân bằng hai phía** như Golub: ⌈k/2⌉ gen cao ở ALL + ⌊k/2⌋ gen cao ở AML; k = 5 → 3 ALL + 2 AML
+  (ALL không đồng nhất B/T-ALL nên lấy phần dư). Lấy top-k theo |SNR| chung sẽ lệch về AML (32/50, xem 1.6).
+  `golub_wv` (TV1, 2.1) nên dùng cùng quy tắc làm tròn.
+- **ttest:** xếp theo p của Welch tăng dần, hòa thì |t| lớn hơn; Benjamini–Hochberg chỉ ghi `qvalues_`, không đổi thứ tự.
+- **lasso, enet:** logistic có phạt, đi theo lưới C = 10⁻²…10² (9 mức) từ phạt mạnh đến yếu, dừng khi có ≥ k hệ số khác 0.
+  Xếp gen: vào mô hình sớm hơn → |hệ số| → |t| Welch. LASSO chỉ chọn tối đa ~n gen khác 0, nên với k lớn (100, 200)
+  phần còn lại xếp theo |t| — cần nhắc khi so sánh kết quả lasso ở k lớn. enet: `l1_ratio = 0.5`, solver saga.
+  Dùng `l1_ratio` thay cho `penalty` (đã bỏ ở scikit-learn 1.8; nhóm ghim 1.9.1, ADR-007).
+- **rf:** 500 cây, độ quan trọng Gini; gen điểm 0 xếp theo |t|. **svm_rfe:** `LinearSVC(C=1)`, mỗi vòng bỏ 10% số gen
+  ban đầu (`step = 0.1`) để chạy đủ nhanh cho 252 cấu hình.
+- **Gen hằng số** trong dữ liệu được fit (σ = 0, hay gặp ở mức sàn trong một fold): SNR = 0, t = 0, p = 1.
+- **Thời gian** (38 mẫu train, 3032 gen sau `GeneFilter`): snr/ttest/lasso/svm_rfe < 0,15 s; enet ≤ 1,2 s; rf ~0,5 s.
+- **Kiểm tra:** `tests/test_features.py` (46 test, dữ liệu tổng hợp): đúng k với mọi k trong YAML, tìm lại gen có tín hiệu,
+  cân bằng hai phía, gen hằng số, nhãn chuỗi/số, `clone` + seed, không rò rỉ, chạy được trong `evaluate()` (nested_cv, wrong_cv).
+  Bộ chọn snr trên 38 mẫu train trùng 19/20 gen đầu với `gene_ranking.csv` (1.6); lệch 1 gen do lọc gen trên train (3032 gen)
+  thay vì trên 72 mẫu (3541 gen).
+
+## ADR-051 — Công việc 2.2 đổi sang Khám phá gen; quy ước của `src/gene_explorer.py`
+- **Ngày:** 12/11/2026 · **Người quyết định:** TV4 (theo ADR-014 của TV1 và *Kế hoạch giai đoạn 2 (hướng mới)*)
+- **Bối cảnh:** kế hoạch mới chuyển trọng tâm sang quản trị dữ liệu và trực quan hóa. Thí nghiệm giai thừa 252 cấu hình,
+  giả thuyết H2, H4 và hình F7 (UpSet) bị bỏ. Công việc 2.2 đổi từ *Chọn biến và độ ổn định* sang *Khám phá gen*,
+  cung cấp logic cho màn hình Khám phá gen của dashboard (TV6, 2.6).
+- **Thay thế ADR-050:** `src/features.py` và `tests/test_features.py` bị xóa theo ADR-014; bản đã làm không đưa vào repo,
+  ADR-050 chỉ còn là ghi chép thiết kế. Không làm bootstrap, Jaccard, `final_genes.csv`, F7 cũ. Hình F7 mới (sơ đồ truy vết) thuộc TV3.
+  Đánh số 050–051 theo dải số dành cho TV4 trong ADR-014 (ADR-013 dành cho TV2).
+- **Giao diện** (`src/gene_explorer.py`), TV6 chỉ gọi các hàm này, không tự tính lại:
+  `find_gene(query)`, `gene_values(probe_id)`, `gene_stats(probe_id, by)`, `disease_or_source(probe_id)`,
+  `ranking_table(top_n, direction, min_abs_snr)`, `collapse_by_symbol(df)`, `annotate(df)`, `clear_cache()`.
+  `find_gene` và `gene_stats` là tên đã khóa trong `tests/test_interfaces.py`; `gene_stats(probe_id)` mặc định nhóm theo
+  `class, source, tissue` như giao diện thống nhất. Hàm vẽ của TV4 đặt trong `src/viz_gene.py`, không sửa `src/viz.py`.
+- **Dữ liệu:** đọc qua `load_golub("curated")` (log10). Xếp hạng lấy nguyên `gene_ranking.csv` của 1.6, tức chỉ tính trên
+  38 mẫu train; bảng trả về mang `attrs["note"]` để giao diện hiện cảnh báo. Biểu đồ và thống kê mô tả dùng cả 72 mẫu,
+  chỉ để hiển thị, không dùng chọn gen hay ước lượng tham số.
+- **`disease_or_source`:** luôn trả về đủ `n_ALL, n_AML, mean_ALL, mean_AML, diff` theo từng nguồn. Ngưỡng
+  `MIN_N_PER_GROUP = 3` chỉ dùng cho cờ `comparable`, không lọc số liệu. Với dữ liệu Golub chỉ St-Jude (3 ALL + 5 AML,
+  tập test) có `comparable = True`; DFCI chỉ có ALL, CALGB và CCG chỉ có AML.
+- **`collapse_by_symbol`:** gộp probe cùng gen, giữ probe có |SNR| lớn nhất, thêm `n_probes`. Khóa gộp theo thứ tự
+  `gene_symbol` → `description` → `probe_id` (bỏ qua giá trị rỗng). Tiêu chí |SNR| chỉ dùng số liệu train nên không rò rỉ.
+  **Còn mở:** cần TV1 (đối chiếu 50 gen Golub theo probe), TV5 (chú giải theo gen), TV6 (bảng hiện theo gen hay probe) xác nhận.
+- **Ký hiệu gen:** lấy bằng `split_symbol` của `src/gene_catalog.py`; rỗng khi mô tả không có dạng `KÝHIỆU tên`
+  (4206/7129 probe, 1971/3541 dòng xếp hạng, ví dụ Zyxin). `find_gene` vẫn tìm được qua chuỗi trong mô tả.
+- **Hợp đồng với TV5:** `results/gene_lists/gene_annotations.csv` có đúng các cột
+  `probe_id, gene_symbol, function, cell_lineage, source_url, verified` (`verified` ∈ `yes`/`no`, mỗi dòng có liên kết
+  NCBI Gene hoặc GeneCards). Thiếu cột thì `annotate` báo lỗi; chưa có file thì dùng `description` và ghi
+  `function_source = "description"`. Ký hiệu rỗng trong bảng được điền từ file chú giải.
+- **Bộ nhớ đệm:** dữ liệu đọc một lần, khóa theo đường dẫn và thời điểm sửa file (sinh lại file thì tự đọc lại).
+  Lần gọi đầu 0,2–0,7 s, các lần sau < 0,02 s (trước khi có bộ nhớ đệm: 0,5–1 s mỗi lần).
+- **Kiểm tra:** `tests/test_gene_explorer.py` (30 test, dữ liệu tổng hợp cùng cỡ nhóm Golub + 1 test trên dữ liệu thật).
+
 ## Nhật ký nhanh (mục 5.2 kế hoạch)
 
 | Ngày | Quyết định | Lý do | Người quyết định |
@@ -181,3 +237,5 @@ tái lập được và truy ngược về nguồn.
 | 01/11/2026 | 1.5: sửa bảng chéo lệch `sample_id`, SOM qua 10 seed, notebook tự sinh CSV + F05/F05b/F05c; H5 chỉ ủng hộ ở mức ALL/AML | ADR-012 | TV1 |
 | 04/11/2026 | 2.4: `mcnemar_test` ghép theo `sample_id`; F11 giữ cột "uncertain"; `nested_cv` có vòng trong chọn k, C; thêm bộ golden-file 19 testcase | ADR-013 | TV2 |
 | 09/11/2026 | Đổi hướng giai đoạn 2 sang quản trị dữ liệu và dashboard; dựng khung file, lệnh `make`, giữ trước số ADR | ADR-014 | TV1 (giảng viên duyệt) |
+| 01/11/2026 | 2.2: `src/features.py` bản 1 — 6 bộ chọn gen + `make_selector`, luôn đúng k gen, snr/ttest cân bằng hai phía | ADR-050 | TV4 |
+| 12/11/2026 | 2.2 đổi sang Khám phá gen theo kế hoạch mới: `src/gene_explorer.py`, thay thế ADR-050; schema `gene_annotations.csv` cho TV5 | ADR-051 | TV4 |
