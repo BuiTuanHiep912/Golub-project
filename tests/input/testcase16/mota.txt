@@ -1,0 +1,15 @@
+testcase16 — wrong_cv cắt pipeline ngay sau bước tên 'select'
+=============================================================
+
+MỤC ĐÍCH
+    Chốt chỗ cắt pipeline của sơ đồ CV sai (wrong_cv).
+
+ĐẦU VÀO
+    Pipeline scale → select (SelectKBest) → clf.
+
+KỲ VỌNG
+    Phần fit trên cả 72 mẫu: scale, select; phần CV: clf.
+
+VÌ SAO QUAN TRỌNG
+    Đây là chỗ cố ý gây rò rỉ để minh họa H3; cắt sai chỗ thì thí nghiệm selection bias
+    đo sai.

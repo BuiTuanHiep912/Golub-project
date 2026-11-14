@@ -23,3 +23,4 @@ dependencies:
       - minisom==2.3.6
       - gseapy==1.3.1        # không có trên conda-forge
       - streamlit==1.65.0
+      - duckdb==1.5.6         # kho dữ liệu, công việc 2.3 (ADR-014)

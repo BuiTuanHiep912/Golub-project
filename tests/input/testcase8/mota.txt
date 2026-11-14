@@ -1,0 +1,14 @@
+testcase8 — McNemar tính 'uncertain' là đoán sai
+================================================
+
+MỤC ĐÍCH
+    Chốt quy ước: dự đoán 'uncertain' của weighted voting (TV1) tính là sai.
+
+ĐẦU VÀO
+    B trả 'uncertain' cho mẫu AML.
+
+KỲ VỌNG
+    B đúng 1/2; một cặp lệch nên p = 1.0.
+
+VÌ SAO QUAN TRỌNG
+    Nếu bỏ qua mẫu 'uncertain' thì mô hình hay từ chối trả lời sẽ được lợi khi so sánh.

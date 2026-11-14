@@ -1,7 +1,15 @@
 """Classifier weighted voting và prediction strength của Golub (1999).
 
-Công việc: 2.1 — Phụ trách: TV1
+Công việc: 2.1 — Phụ trách: TV1 — Kế hoạch giai đoạn 2, mục 2.1 (ADR-014); lựa chọn cài đặt: ADR-020.
+Dùng cho: TV6 (màn hình Hồ sơ bệnh nhân, qua src/patient.py), TV5 (PS cho Fig. 3A).
 Công thức và ví dụ tính tay: docs/report/5.1_mo_hinh_golub.md (bài báo: thân bài tr. 532, ghi chú 18–21).
+
+Giao diện đã thống nhất, KHÔNG đổi tên khi chưa báo nhóm:
+    clf = GolubWeightedVoting(n_genes=50, ps_threshold=0.3).fit(X_train, y_train)
+    clf.predict(X)              -> array gồm 'ALL', 'AML' hoặc 'uncertain'
+    clf.predict_proba(X)        -> array (n, 2), cột theo clf.classes_
+    clf.prediction_strength(X)  -> array PS trong [0, 1]
+Bổ sung (cho src/patient.py): clf.votes(X), clf.vote_totals(X).
 
 Quy ước: lớp 1 = ALL (phiếu dương), lớp 2 = AML (phiếu âm). Mọi tham số (chuẩn hóa, SNR,
 chọn gen, a, b) học trong `fit` từ đúng dữ liệu được truyền vào, nên LOOCV không rò rỉ.
@@ -13,13 +21,16 @@ import pandas as pd
 from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.utils.validation import check_is_fitted
 
-from src.config import PS_THRESHOLD
+try:
+    from src.config import PS_THRESHOLD
+except ModuleNotFoundError:
+    from config import PS_THRESHOLD
 
 CLASSES = ("ALL", "AML")  # lớp 1 (dấu dương), lớp 2 (dấu âm)
 UNCERTAIN = "uncertain"
 
 
-class GolubWeightedVoting(BaseEstimator, ClassifierMixin):
+class GolubWeightedVoting(ClassifierMixin, BaseEstimator):
     """Weighted voting của Golub et al. (1999).
 
     Tham số:

@@ -125,34 +125,47 @@ tái lập được và truy ngược về nguồn.
   - Kết luận H5 đổi từ "ủng hộ mạnh" thành "ủng hộ ở mức ALL/AML, không ủng hộ ở mức B-ALL/T-ALL".
 - **Hệ quả:** xóa `F5_clustermap_{report,slide}.png` (bản trùng cũ của F05). Cập nhật `docs/report/3.2_class_discovery.md`, `docs/handover/1.5.md`.
 
-## ADR-013 — Đổi hướng giai đoạn 2: trọng tâm quản trị dữ liệu và trực quan hóa, học máy thành tính năng phụ
-- **Ngày:** 09/11/2026 (giảng viên duyệt) · ghi 15/11/2026 · **Người quyết định:** cả nhóm, giảng viên duyệt · **Người ghi:** TV1
-- **Bối cảnh:** giảng viên nhận xét đề tài nghiêng quá nhiều về học máy so với học phần IT5425 (Quản trị dữ liệu và trực
-  quan hóa), yêu cầu tăng phần quản trị dữ liệu và trực quan hóa có giá trị thực tế; dashboard phải chạy được; giữ phần
-  học máy rút gọn (mô hình Golub và selection bias). Kịch bản mới: một trung tâm xét nghiệm nhận mẫu theo lô từ 4 phòng
-  lab (DFCI, CALGB, St-Jude, CCG), phục vụ ba nhóm người dùng (kỹ thuật viên, nhà nghiên cứu, bác sĩ).
-- **Quyết định** (chi tiết: tài liệu "Kế hoạch giai đoạn 2 (hướng mới)", mục 1):
-  - **Bỏ:** thí nghiệm giai thừa 252 cấu hình (6 phương pháp chọn gen × 6 mức k × 7 bộ phân loại); giả thuyết H2, H4;
-    hình F7 (UpSet), F8 (hiệu năng theo k), F9 (so sánh mô hình) cũ; `src/features.py`, `src/models.py`, `runs.parquet`.
-  - **Giữ:** toàn bộ kết quả giai đoạn 1; mô hình Golub weighted voting kèm PS; thí nghiệm selection bias (F10) làm minh
-    họa hậu quả rò rỉ dữ liệu; giả thuyết H1, H3, H5, H6.
-  - **Thêm:** pipeline nhập theo lô có chặn lô lỗi (2.4); kho DuckDB lược đồ hình sao, truy vấn OLAP, sơ đồ truy vết (2.3);
-    quy trình tải mẫu mới; dashboard Streamlit 3 màn hình (2.6); thiết kế lại Fig. 2, 3A, 4 của bài báo (2.5).
-  - **Hình mới:** F7 = sơ đồ truy vết (TV3); F8 = chất lượng dữ liệu theo phòng lab (TV2); F9 = kết quả truy vấn OLAP
-    (TV3); F10 giữ nguyên (TV2); F11 = kết quả mô hình Golub trên tập kiểm tra (TV1); F12 = PS theo từng mẫu (chuyển từ
-    TV5 sang TV1).
-  - **Phân công:** mỗi thành viên giữ số công việc 2.x, đổi nội dung: 2.1 TV1 mô hình Golub + `patient_profile()`;
-    2.2 TV4 khám phá gen; 2.3 TV3 kho DuckDB; 2.4 TV2 nhập theo lô + chất lượng; 2.5 TV5 thiết kế lại hình + chú giải gen;
-    2.6 TV6 dashboard. Tên file và hàm dùng chung theo mục 4 của kế hoạch; muốn đổi thì ghi vào file này.
-  - **Quy ước dữ liệu:** 38 bệnh nhân huấn luyện là dữ liệu tham chiếu; 34 bệnh nhân kiểm tra đóng vai bệnh nhân mới,
-    không được dùng để huấn luyện, chọn gen hay tính bất kỳ tham số nào.
-- **Hệ quả:**
-  - Thay ADR-009 ở phần F11: F11 không còn là ROC của "mô hình cuối" (TV3) mà là kết quả mô hình Golub (TV1).
-  - `config/experiment_config.yaml` và các chương 4–7 của báo cáo viết theo kế hoạch cũ, cần sửa theo hướng mới.
-  - Cần thêm `duckdb` vào `environment.yml` và `requirements.txt`, cố định phiên bản (ADR-007).
-  - Ngày nộp giả định CN 06/12/2026, sửa khi có ngày chính thức.
+## ADR-013 — Sửa 3 lỗi của `src/evaluate.py` trước khi dùng số liệu cho báo cáo (công việc 2.4)
+- **Ngày:** 04/11/2026 · **Người quyết định:** TV2
+- **`mcnemar_test`** từng so ba đầu vào theo vị trí (bỏ chỉ mục `sample_id`): hai mô hình cùng đúng
+  34/34 nhưng một bên xếp ngược thì báo p = 0.0. Nay `pd.Series` được xếp lại theo chỉ mục của
+  `y_true`; khác tập mẫu hoặc khác độ dài thì báo lỗi.
+- **F11 / `confusion_counts`**: ma trận nhầm lẫn từng dùng `labels=[0, 1]` nên bỏ mất dự đoán
+  "uncertain" của weighted voting (2 mẫu "uncertain" thì chỉ cộng ra 32/34). Nay có thêm cột
+  "uncertain" khi mô hình trả về nó; tiêu đề lấy đúng số mẫu thay vì ghi cứng 34.
+- **Dòng `nested_cv` của `main()` và notebook 08** từng chạy không có lưới nên không lồng vòng nào
+  (repeated CV, k = 50, C = 1 cố định). Nay vòng trong (5 fold) chọn k theo nhân tố B của
+  `experiment_config.yaml` và C ∈ {0.01, 0.1, 1, 10} theo mục 3.5.2. Kết quả: 0.968 ± 0.055 (trước
+  0.960 ± 0.049); `make evaluate` lâu hơn (~4,5 phút so với ~45 giây).
+- **Không đổi:** "CV đúng" của thí nghiệm selection bias vẫn là `nested_cv` không lưới (k cố định),
+  để 200 lần chạy không nặng gấp hàng chục lần; bảng selection bias giữ nguyên từng chữ số.
+- **Kiểm thử:** 6 test hồi quy trong `tests/test_evaluate.py` + bộ golden-file 19 testcase
+  (`tests/test_golden_evaluate.py`, `tests/input|expect/`; `tests/actual/` trong `.gitignore`).
 
-## ADR-014 — Lựa chọn cài đặt mô hình Golub weighted voting (công việc 2.1)
+## ADR-014 — Đổi hướng giai đoạn 2: quản trị dữ liệu và dashboard, thu gọn học máy
+- **Ngày:** 09/11/2026 · **Người đề xuất:** TV1 · **Người quyết định:** giảng viên duyệt, TV1
+- **Bối cảnh:** giảng viên góp ý đề tài thiên về học máy; học phần Quản trị dữ liệu và trực quan hóa
+  (IT5425) yêu cầu đẩy mạnh quản trị dữ liệu và trực quan hóa có tính thực tế.
+- **Quyết định:**
+  - Bỏ thí nghiệm giai thừa 252 cấu hình và giả thuyết H2, H4; xóa `src/features.py`, `src/models.py`
+    (còn trống) và lệnh `make experiments`. `config/experiment_config.yaml` giữ lại làm tài liệu giai
+    đoạn 1, giai đoạn 2 không dùng.
+  - Thêm: nhập theo lô (`src/ingest.py`, TV2), kho DuckDB (`src/warehouse.py`, `sql/`, TV3), khám phá
+    gen (`src/gene_explorer.py`, TV4), hồ sơ bệnh nhân (`src/patient.py`, TV1), thiết kế lại hình của
+    bài báo (TV5), dashboard Streamlit bắt buộc chạy được (`app/`, TV6). Thêm `duckdb==1.5.6`.
+  - Giữ mô hình Golub weighted voting (TV1) và thí nghiệm selection bias (TV2).
+  - Quy ước dữ liệu: 38 mẫu huấn luyện là dữ liệu tham chiếu; 34 mẫu kiểm tra đóng vai bệnh nhân mới,
+    không dùng để huấn luyện, chọn gen hay tính tham số.
+- **Quy tắc tránh conflict khi làm song song:**
+  - Mỗi file một chủ, không sửa file của người khác; không sửa notebook của người khác.
+  - `src/viz.py` chỉ TV6 sửa; hàm vẽ mới để trong file riêng `src/viz_<chủ đề>.py`.
+  - `Makefile`, `run_all.py`, `environment.yml`, `requirements.txt`: báo nhóm trước khi sửa.
+  - Số ADR giữ trước: ADR-013 cho nhánh `2.4-evaluate` (TV2); sau đó TV1 020–029, TV2 030–039,
+    TV3 040–049, TV4 050–059, TV5 060–069, TV6 070–079.
+  - `tests/test_interfaces.py` khóa tên hàm dùng chung; đổi tên thì ghi ADR và sửa test cùng lúc.
+- **Hệ quả:** kế hoạch, phân công và hạn giai đoạn 2 nằm trong tài liệu "Kế hoạch giai đoạn 2 (hướng mới)".
+
+## ADR-020 — Lựa chọn cài đặt mô hình Golub weighted voting (công việc 2.1)
 - **Ngày:** 15/11/2026 · **Người quyết định:** TV1
 - **Bối cảnh:** bài báo (thân bài tr. 532, ghi chú 18–21) không nêu đủ chi tiết để cài đặt duy nhất một cách; các lựa
   chọn nhỏ có thể đổi kết luận: mẫu 66 có PS = 0,30004, chỉ vừa qua ngưỡng 0,3. Công thức và ví dụ tính tay:
@@ -164,13 +177,88 @@ tái lập được và truy ngược về nguồn.
     đối chiếu với ví dụ tính tay.
   - **D2 — Độ lệch chuẩn:** chia n − 1 (`ddof=1`, mặc định của pandas và hàm `sd()` của R); bài báo không nêu.
   - **D3 — Số gen lẻ:** báo `ValueError`, vì ghi chú 18 định nghĩa theo n/2 và thí nghiệm lưới k (có k = 5) đã bỏ
-    theo ADR-013. Thay cho ghi chú "TV1 chốt ở 2.1" trong `config/experiment_config.yaml`.
+    theo ADR-014. Thay cho ghi chú "TV1 chốt ở 2.1" trong `config/experiment_config.yaml`.
   - **Gen hằng:** gen có SD = 0 trên train (1050 gen ở ngưỡng sàn) giữ SD = 1 khi chuẩn hóa; gen có σ_ALL + σ_AML = 0
     được gán SNR = 0 nên không bao giờ được chọn.
   - **Ngưỡng:** PS < `PS_THRESHOLD` (0,3, `src/config.py`) thì trả `"uncertain"`; PS đúng bằng 0,3 tính là chắc chắn.
   - **`predict_proba`:** trả tỷ lệ phiếu V_ALL / (V_ALL + V_AML), không phải xác suất hiệu chỉnh; ghi rõ trong docstring.
 - **Hệ quả:** kết quả sơ bộ trên 34 mẫu test (50 gen): 32 dự đoán chắc chắn, 31 đúng, PS trung vị 0,73; bài báo 29/29.
   Nguyên nhân chênh (tiền xử lý, D2) xem xét ở tuần 2 khi lập bảng so sánh; nếu đổi lựa chọn nào thì cập nhật ADR này.
+
+## ADR-050 — Quy ước của `src/features.py` (công việc 2.2, bản 1; đã thay thế bởi ADR-051)
+- **Ngày:** 01/11/2026 · **Người quyết định:** TV4
+- **Giao diện:** 6 bộ chọn `snr, ttest, lasso, enet, rf, svm_rfe` (đúng tên trong `experiment_config.yaml`),
+  tạo bằng `make_selector(tên, k, **params)`. Mỗi bộ chọn kế thừa `SelectorMixin` + `BaseEstimator` để
+  `clone()` được và để `evaluate.py` cắt Pipeline tại bước chọn gen (`wrong_cv`). Đặt ở bước tên `select`:
+  `GeneFilter → StandardScaler → select → bộ phân loại`. Nhãn nhận `"ALL"/"AML"` hoặc 0/1 (1 = AML).
+- **Luôn trả về đúng k gen** (k > số gen thì giữ tất cả), để mỗi ô của thí nghiệm giai thừa so cùng số gen.
+- **snr, ttest chọn cân bằng hai phía** như Golub: ⌈k/2⌉ gen cao ở ALL + ⌊k/2⌋ gen cao ở AML; k = 5 → 3 ALL + 2 AML
+  (ALL không đồng nhất B/T-ALL nên lấy phần dư). Lấy top-k theo |SNR| chung sẽ lệch về AML (32/50, xem 1.6).
+  `golub_wv` (TV1, 2.1) nên dùng cùng quy tắc làm tròn.
+- **ttest:** xếp theo p của Welch tăng dần, hòa thì |t| lớn hơn; Benjamini–Hochberg chỉ ghi `qvalues_`, không đổi thứ tự.
+- **lasso, enet:** logistic có phạt, đi theo lưới C = 10⁻²…10² (9 mức) từ phạt mạnh đến yếu, dừng khi có ≥ k hệ số khác 0.
+  Xếp gen: vào mô hình sớm hơn → |hệ số| → |t| Welch. LASSO chỉ chọn tối đa ~n gen khác 0, nên với k lớn (100, 200)
+  phần còn lại xếp theo |t| — cần nhắc khi so sánh kết quả lasso ở k lớn. enet: `l1_ratio = 0.5`, solver saga.
+  Dùng `l1_ratio` thay cho `penalty` (đã bỏ ở scikit-learn 1.8; nhóm ghim 1.9.1, ADR-007).
+- **rf:** 500 cây, độ quan trọng Gini; gen điểm 0 xếp theo |t|. **svm_rfe:** `LinearSVC(C=1)`, mỗi vòng bỏ 10% số gen
+  ban đầu (`step = 0.1`) để chạy đủ nhanh cho 252 cấu hình.
+- **Gen hằng số** trong dữ liệu được fit (σ = 0, hay gặp ở mức sàn trong một fold): SNR = 0, t = 0, p = 1.
+- **Thời gian** (38 mẫu train, 3032 gen sau `GeneFilter`): snr/ttest/lasso/svm_rfe < 0,15 s; enet ≤ 1,2 s; rf ~0,5 s.
+- **Kiểm tra:** `tests/test_features.py` (46 test, dữ liệu tổng hợp): đúng k với mọi k trong YAML, tìm lại gen có tín hiệu,
+  cân bằng hai phía, gen hằng số, nhãn chuỗi/số, `clone` + seed, không rò rỉ, chạy được trong `evaluate()` (nested_cv, wrong_cv).
+  Bộ chọn snr trên 38 mẫu train trùng 19/20 gen đầu với `gene_ranking.csv` (1.6); lệch 1 gen do lọc gen trên train (3032 gen)
+  thay vì trên 72 mẫu (3541 gen).
+
+## ADR-051 — Công việc 2.2 đổi sang Khám phá gen; quy ước của `src/gene_explorer.py`
+- **Ngày:** 12/11/2026 · **Người quyết định:** TV4 (theo ADR-014 của TV1 và *Kế hoạch giai đoạn 2 (hướng mới)*)
+- **Bối cảnh:** kế hoạch mới chuyển trọng tâm sang quản trị dữ liệu và trực quan hóa. Thí nghiệm giai thừa 252 cấu hình,
+  giả thuyết H2, H4 và hình F7 (UpSet) bị bỏ. Công việc 2.2 đổi từ *Chọn biến và độ ổn định* sang *Khám phá gen*,
+  cung cấp logic cho màn hình Khám phá gen của dashboard (TV6, 2.6).
+- **Thay thế ADR-050:** `src/features.py` và `tests/test_features.py` bị xóa theo ADR-014; bản đã làm không đưa vào repo,
+  ADR-050 chỉ còn là ghi chép thiết kế. Không làm bootstrap, Jaccard, `final_genes.csv`, F7 cũ. Hình F7 mới (sơ đồ truy vết) thuộc TV3.
+  Đánh số 050–051 theo dải số dành cho TV4 trong ADR-014 (ADR-013 dành cho TV2).
+- **Giao diện** (`src/gene_explorer.py`), TV6 chỉ gọi các hàm này, không tự tính lại:
+  `find_gene(query)`, `gene_values(probe_id)`, `gene_stats(probe_id, by)`, `disease_or_source(probe_id)`,
+  `ranking_table(top_n, direction, min_abs_snr)`, `collapse_by_symbol(df)`, `annotate(df)`, `clear_cache()`.
+  `find_gene` và `gene_stats` là tên đã khóa trong `tests/test_interfaces.py`; `gene_stats(probe_id)` mặc định nhóm theo
+  `class, source, tissue` như giao diện thống nhất. Hàm vẽ của TV4 đặt trong `src/viz_gene.py`, không sửa `src/viz.py`.
+- **Dữ liệu:** đọc qua `load_golub("curated")` (log10). Xếp hạng lấy nguyên `gene_ranking.csv` của 1.6, tức chỉ tính trên
+  38 mẫu train; bảng trả về mang `attrs["note"]` để giao diện hiện cảnh báo. Biểu đồ và thống kê mô tả dùng cả 72 mẫu,
+  chỉ để hiển thị, không dùng chọn gen hay ước lượng tham số.
+- **`disease_or_source`:** luôn trả về đủ `n_ALL, n_AML, mean_ALL, mean_AML, diff` theo từng nguồn. Ngưỡng
+  `MIN_N_PER_GROUP = 3` chỉ dùng cho cờ `comparable`, không lọc số liệu. Với dữ liệu Golub chỉ St-Jude (3 ALL + 5 AML,
+  tập test) có `comparable = True`; DFCI chỉ có ALL, CALGB và CCG chỉ có AML.
+- **`collapse_by_symbol`:** gộp probe cùng gen, giữ probe có |SNR| lớn nhất, thêm `n_probes`. Khóa gộp theo thứ tự
+  `gene_symbol` → `description` → `probe_id` (bỏ qua giá trị rỗng). Tiêu chí |SNR| chỉ dùng số liệu train nên không rò rỉ.
+  **Còn mở:** cần TV1 (đối chiếu 50 gen Golub theo probe), TV5 (chú giải theo gen), TV6 (bảng hiện theo gen hay probe) xác nhận.
+- **Ký hiệu gen:** lấy bằng `split_symbol` của `src/gene_catalog.py`; rỗng khi mô tả không có dạng `KÝHIỆU tên`
+  (4206/7129 probe, 1971/3541 dòng xếp hạng, ví dụ Zyxin). `find_gene` vẫn tìm được qua chuỗi trong mô tả.
+- **Hợp đồng với TV5:** `results/gene_lists/gene_annotations.csv` có đúng các cột
+  `probe_id, gene_symbol, function, cell_lineage, source_url, verified` (`verified` ∈ `yes`/`no`, mỗi dòng có liên kết
+  NCBI Gene hoặc GeneCards). Thiếu cột thì `annotate` báo lỗi; chưa có file thì dùng `description` và ghi
+  `function_source = "description"`. Ký hiệu rỗng trong bảng được điền từ file chú giải.
+- **Bộ nhớ đệm:** dữ liệu đọc một lần, khóa theo đường dẫn và thời điểm sửa file (sinh lại file thì tự đọc lại).
+  Lần gọi đầu 0,2–0,7 s, các lần sau < 0,02 s (trước khi có bộ nhớ đệm: 0,5–1 s mỗi lần).
+- **Kiểm tra:** `tests/test_gene_explorer.py` (30 test, dữ liệu tổng hợp cùng cỡ nhóm Golub + 1 test trên dữ liệu thật).
+
+## ADR-040 — Lược đồ kho DuckDB `golub.duckdb` (công việc 2.3, bản 1)
+- **Ngày:** 15/11/2026 · **Người quyết định:** TV3 (theo ADR-014 và *Kế hoạch giai đoạn 2 (hướng mới)*)
+- **Bối cảnh:** TV1, TV2, TV4, TV6 cần một nơi truy vấn chung thay vì tự đọc Parquet; lược đồ hình sao ở
+  Bảng 2.7 mới chỉ có trên giấy.
+- **Quyết định:** `src/warehouse.py` dựng `data/warehouse/golub.duckdb` (không lên Git) từ `load_golub("cleansed")`,
+  `load_golub("curated")` và `standardized/genes.parquet`:
+  - `fact_expression(sample_id, probe_id, value_raw, value_log10)`: dạng dài, 72 × 7129 = 513 288 dòng. Giữ cả giá trị
+    MAS4 gốc (tầng cleansed, có âm) và giá trị log10 (tầng curated) để mọi con số đối chiếu được với tầng gốc.
+  - `dim_sample(sample_id, split, class, subtype, tissue, source, sex, qc_outlier, batch_id)`, khóa chính `sample_id`.
+  - `dim_gene(probe_id, description, is_control)`, khóa chính `probe_id`.
+  - `dim_batch(batch_id, source, n_samples, n_train, n_test, n_all, n_aml, n_bm, n_pb)`: **mỗi phòng lab là một lô,
+    `batch_id` = tên nguồn** (`DFCI`, `CALGB`, `St-Jude`, `CCG`, khớp `BATCH_SOURCES` của `src/ingest.py`).
+  - `fact_qc`: nạp nguyên kết quả `ingest_batches()` của TV2; **TV2 giữ `batch_id` = tên nguồn** để nối được với
+    `dim_batch`. Khi `ingest_batches()` chưa cài đặt thì bỏ qua bảng này và in thông báo, các bảng khác vẫn dựng.
+- **Cách ghi:** ghi ra file tạm rồi thay file cũ, lỗi giữa chừng không để lại kho dở dang. Dựng lại mất khoảng 4 giây.
+- **Truy vấn OLAP:** mỗi câu hỏi nghiệp vụ là một file `sql/NN_<chủ đề>.sql`, có chú thích câu hỏi ở đầu file.
+- **Kiểm tra:** `tests/test_warehouse.py` dựng kho vào thư mục tạm, đối chiếu Bảng 2.4, khóa ngoại, khoảng giá trị
+  và số giá trị âm (147 174).
 
 ## Nhật ký nhanh (mục 5.2 kế hoạch)
 
@@ -186,5 +274,8 @@ tái lập được và truy ngược về nguồn.
 | 25/10/2026 | 1.3: H6 kiểm định trong từng lớp (0/15 có ý nghĩa sau BH), không hiệu chỉnh batch; chú thích + test cho `experiment_config.yaml` | ADR-010 | TV1 |
 | 28/10/2026 | 1.4: `src/viz.py` (F2, F2b, F3, F4a–c, F4e), `style_guide.md`, `notebooks/01_eda.ipynb`, `tests/test_viz.py`; F04d giữ nguyên của TV1 | ADR-011 | TV6 |
 | 01/11/2026 | 1.5: sửa bảng chéo lệch `sample_id`, SOM qua 10 seed, notebook tự sinh CSV + F05/F05b/F05c; H5 chỉ ủng hộ ở mức ALL/AML | ADR-012 | TV1 |
-| 09/11/2026 | Đổi hướng giai đoạn 2: quản trị dữ liệu + trực quan hóa là trọng tâm; bỏ thí nghiệm 252 cấu hình, H2, H4; thêm nhập theo lô, kho DuckDB, dashboard 3 màn hình | ADR-013 | Cả nhóm, giảng viên duyệt |
-| 15/11/2026 | 2.1: Golub weighted voting chuẩn hóa z-score theo train, SD chia n − 1, n lẻ báo lỗi, PS < 0,3 là uncertain | ADR-014 | TV1 |
+| 04/11/2026 | 2.4: `mcnemar_test` ghép theo `sample_id`; F11 giữ cột "uncertain"; `nested_cv` có vòng trong chọn k, C; thêm bộ golden-file 19 testcase | ADR-013 | TV2 |
+| 09/11/2026 | Đổi hướng giai đoạn 2 sang quản trị dữ liệu và dashboard; dựng khung file, lệnh `make`, giữ trước số ADR | ADR-014 | TV1 (giảng viên duyệt) |
+| 01/11/2026 | 2.2: `src/features.py` bản 1 — 6 bộ chọn gen + `make_selector`, luôn đúng k gen, snr/ttest cân bằng hai phía | ADR-050 | TV4 |
+| 12/11/2026 | 2.2 đổi sang Khám phá gen theo kế hoạch mới: `src/gene_explorer.py`, thay thế ADR-050; schema `gene_annotations.csv` cho TV5 | ADR-051 | TV4 |
+| 15/11/2026 | 2.1: Golub weighted voting chuẩn hóa z-score theo train, SD chia n − 1, n lẻ báo lỗi, PS < 0,3 là uncertain | ADR-020 | TV1 |

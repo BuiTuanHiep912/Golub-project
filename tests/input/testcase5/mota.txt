@@ -1,0 +1,15 @@
+testcase5 — McNemar xếp dự đoán theo sample_id, không theo vị trí (hồi quy)
+===========================================================================
+
+MỤC ĐÍCH
+    Hồi quy cho lỗi so theo vị trí: hai mô hình giống hệt nhau, B chỉ xếp dòng ngược lại.
+
+ĐẦU VÀO
+    y_true, pred_a, pred_b là pd.Series chỉ mục sample_id 39..72; pred_b đảo thứ tự dòng.
+
+KỲ VỌNG
+    B đúng 34/34, không có cặp lệch, p = 1.0.
+
+VÌ SAO QUAN TRỌNG
+    Bản cũ bỏ chỉ mục rồi so theo vị trí: báo B chỉ đúng 6/34 và p = 0.0 — kết luận
+    'hai mô hình khác nhau' hoàn toàn sai mà không có cảnh báo nào.

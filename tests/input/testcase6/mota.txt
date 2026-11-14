@@ -1,0 +1,14 @@
+testcase6 — McNemar báo lỗi khi B thiếu một mẫu test
+====================================================
+
+MỤC ĐÍCH
+    Hai mô hình phải được so trên CÙNG một tập test.
+
+ĐẦU VÀO
+    pred_b là Series thiếu mẫu 72 (33 dòng).
+
+KỲ VỌNG
+    ValueError nêu rõ pred_b không cùng tập sample_id với y_true.
+
+VÌ SAO QUAN TRỌNG
+    Thiếu mẫu mà vẫn chạy thì p-value tính trên hai tập test khác nhau, vô nghĩa.

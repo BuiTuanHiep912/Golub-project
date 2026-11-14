@@ -1,0 +1,18 @@
+{
+  "kind": "mcnemar",
+  "desc": "McNemar báo lỗi khi các mảng khác độ dài",
+  "y_true": [
+    "ALL",
+    "AML",
+    "AML"
+  ],
+  "pred_a": [
+    "ALL",
+    "AML",
+    "AML"
+  ],
+  "pred_b": [
+    "ALL",
+    "AML"
+  ]
+}

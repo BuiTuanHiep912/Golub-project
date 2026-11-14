@@ -70,8 +70,10 @@ Mô tả đầy đủ từng tầng và từng cột: `docs/data_dictionary.md`.
 | Thư mục | Nội dung |
 |---|---|
 | data/ | raw → standardized → cleansed → curated (không đưa lên Git), sandbox/ nháp cá nhân |
-| config/ | experiment_config.yaml |
-| src/ | code dùng chung (load, quality, preprocess, golub_wv, features, models, evaluate, viz) |
+| config/ | experiment_config.yaml (thiết kế giai đoạn 1, ADR-014) |
+| src/ | code dùng chung (load, quality, preprocess, ingest, warehouse, gene_explorer, golub_wv, patient, evaluate, viz) |
+| sql/ | truy vấn OLAP trên kho DuckDB |
+| app/ | dashboard Streamlit, chạy bằng `make app` |
 | notebooks/ | 01_eda … 09_interpretation |
 | results/ | metrics/, figures/report/, figures/slides/, gene_lists/ |
 | tests/ | kiểm thử dữ liệu và chống rò rỉ |

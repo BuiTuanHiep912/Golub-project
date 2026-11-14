@@ -1,0 +1,27 @@
+{
+  "keys": [
+    "bal_acc_mean",
+    "bal_acc_sd",
+    "auc_mean",
+    "per_fold",
+    "config",
+    "predictions"
+  ],
+  "per_fold_rows": 5,
+  "n_test": [
+    15,
+    15,
+    14,
+    14,
+    14
+  ],
+  "bal_acc_mean": 1.0,
+  "bal_acc_sd": 0.0,
+  "auc_mean": 1.0,
+  "inner_folds": 5,
+  "n_predictions": 72,
+  "prediction_ids": [
+    1,
+    72
+  ]
+}

@@ -1,0 +1,14 @@
+testcase19 — wrong_cv báo lỗi khi bước chọn gen đứng cuối pipeline
+==================================================================
+
+MỤC ĐÍCH
+    Sau bước chọn gen phải còn bộ phân loại để chạy CV.
+
+ĐẦU VÀO
+    Pipeline scale → select, không có clf.
+
+KỲ VỌNG
+    ValueError 'cần ít nhất một bước (bộ phân loại) sau bước chọn gen'.
+
+VÌ SAO QUAN TRỌNG
+    Không có bước nào sau chỗ cắt thì phần CV rỗng; báo lỗi rõ thay vì lỗi khó hiểu của sklearn.

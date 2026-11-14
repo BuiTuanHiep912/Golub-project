@@ -1,0 +1,15 @@
+testcase18 — wrong_cv báo lỗi khi pipeline không có bước chọn gen
+=================================================================
+
+MỤC ĐÍCH
+    Không có bước chọn gen thì không có gì để 'chọn trước CV'.
+
+ĐẦU VÀO
+    Pipeline scale → clf.
+
+KỲ VỌNG
+    ValueError 'cần pipeline có bước chọn gen'.
+
+VÌ SAO QUAN TRỌNG
+    Chạy tiếp thì wrong_cv trùng với CV đúng và thí nghiệm H3 báo 'không có selection
+    bias' một cách giả tạo.

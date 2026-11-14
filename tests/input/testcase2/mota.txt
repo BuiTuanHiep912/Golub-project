@@ -1,0 +1,14 @@
+testcase2 — Wilson khi sai hết 0/34: cận dưới đúng bằng 0
+=========================================================
+
+MỤC ĐÍCH
+    Chốt đầu mút dưới của khoảng Wilson ở trường hợp ngược lại (sai hết).
+
+ĐẦU VÀO
+    n_correct = 0, n = 34.
+
+KỲ VỌNG
+    [0.0, 0.101515]; cận trên tính tay bằng z²/(n + z²).
+
+VÌ SAO QUAN TRỌNG
+    Đối xứng với testcase1: cận dưới phải đúng 0, không phải một số âm hay 1e-17.

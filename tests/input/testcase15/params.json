@@ -1,0 +1,11 @@
+{
+  "kind": "evaluate",
+  "desc": "evaluate báo lỗi với tên sơ đồ lạ",
+  "scheme": "LOOCV",
+  "data": {
+    "signal": 4.0,
+    "n_genes": 300,
+    "seed": 0
+  },
+  "k": 10
+}

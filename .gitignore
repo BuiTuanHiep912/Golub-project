@@ -23,3 +23,6 @@ venv/
 Thumbs.db
 .vscode/
 .idea/
+
+# bộ test golden-file: actual/ sinh ra mỗi lần chạy
+tests/actual/

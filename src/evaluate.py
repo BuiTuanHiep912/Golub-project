@@ -87,7 +87,26 @@ def mcnemar_test(y_true, pred_a, pred_b) -> dict:
     Chỉ các mẫu mà đúng một trong hai mô hình đoán đúng mới mang thông tin; với 34 mẫu số
     cặp lệch nhỏ nên dùng bản chính xác thay cho chi bình phương. Dự đoán "không chắc
     chắn" tính là sai.
+
+    y_true là pd.Series (chỉ mục sample_id, như cột y_true của evaluate()["predictions"]) thì
+    pred_a/pred_b dạng Series được xếp lại theo chỉ mục đó; mảng không có chỉ mục được hiểu là
+    cùng thứ tự với y_true. Hai mô hình không cùng tập mẫu test thì báo lỗi thay vì so lệch.
     """
+    if isinstance(y_true, pd.Series):
+        if not y_true.index.is_unique:
+            raise ValueError("y_true có sample_id trùng")
+        aligned = []
+        for name, pred in (("pred_a", pred_a), ("pred_b", pred_b)):
+            # Dự đoán của hai mô hình thường đến từ hai lần chạy hoặc hai file, nên thứ tự dòng
+            # không bảo đảm giống nhau: so theo vị trí sẽ ghép nhầm mẫu mà không báo gì.
+            if isinstance(pred, pd.Series):
+                if not pred.index.is_unique or set(pred.index) != set(y_true.index):
+                    raise ValueError(f"{name} không cùng tập sample_id với y_true (không cùng tập test)")
+                pred = pred.reindex(y_true.index)
+            aligned.append(pred)
+        pred_a, pred_b = aligned
+    if not len(y_true) == len(pred_a) == len(pred_b):
+        raise ValueError("y_true, pred_a, pred_b phải có cùng số mẫu (cùng tập test)")
     t = _encode(y_true)
     ok_a, ok_b = _encode(pred_a) == t, _encode(pred_b) == t
     only_a, only_b = int((ok_a & ~ok_b).sum()), int((~ok_a & ok_b).sum())
@@ -98,6 +117,24 @@ def mcnemar_test(y_true, pred_a, pred_b) -> dict:
         p_value = float(mcnemar(table, exact=True).pvalue)
     return {"n": len(t), "a_correct": int(ok_a.sum()), "b_correct": int(ok_b.sum()),
             "a_only_correct": only_a, "b_only_correct": only_b, "p_value": p_value}
+
+
+def confusion_counts(y_true, y_pred) -> pd.DataFrame:
+    """Ma trận nhầm lẫn dạng bảng: hàng = lớp thật (ALL, AML), cột = dự đoán.
+
+    Có dự đoán "uncertain" (weighted voting của TV1, PS < ngưỡng) thì thêm cột "uncertain"
+    để tổng ma trận luôn bằng số mẫu; mô hình không bao giờ "uncertain" thì giữ 2×2.
+    """
+    t, p = _encode(y_true), _encode(y_pred)
+    if not np.isin(t, [0, 1]).all():
+        raise ValueError(f"y_true chỉ được chứa {NEGATIVE_CLASS}/{POSITIVE_CLASS} hoặc 0/1")
+    codes, names = [0, 1], [NEGATIVE_CLASS, POSITIVE_CLASS]
+    if (p == -1).any():
+        codes, names = codes + [-1], names + ["uncertain"]
+    # Hàng -1 luôn bằng 0 vì nhãn thật không bao giờ "uncertain" -> chỉ giữ hai hàng đầu.
+    cm = confusion_matrix(t, p, labels=codes)[:2]
+    return pd.DataFrame(cm, index=pd.Index(names[:2], name="thật"),
+                        columns=pd.Index(names, name="dự đoán"))
 
 
 def _encode(labels) -> np.ndarray:
@@ -316,6 +353,9 @@ def selection_bias_experiment(pipeline, X: pd.DataFrame, y, n_permutations: int 
     - Nhãn thật: mỗi seed (mặc định 10 seed trong YAML) một lần CV cho mỗi cách.
     - Nhãn hoán vị: n_permutations lần xáo nhãn (xóa mọi quan hệ thật giữa gen và nhãn);
       mỗi lần chạy CẢ HAI cách trên cùng nhãn đã xáo, với seed chia fold = số thứ tự lần lặp.
+    - "CV đúng" ở đây là nested_cv KHÔNG có param_grid (chọn gen trong pipeline, k cố định):
+      H3 chỉ cần so chọn gen trong/ngoài CV, còn thêm vòng trong thì 200 lần chạy nặng gấp
+      hàng chục lần. Hai cách dùng cùng pipeline và cùng cách chia fold nên so được với nhau.
 
     Trả về mỗi dòng một lần chạy: labels ("real"|"permuted"), cv ("correct"|"wrong"), rep,
     seed, bal_acc, auc. Với nhãn hoán vị, CV đúng phải quanh 0.5; CV sai cao hơn hẳn là
@@ -413,9 +453,10 @@ def plot_roc_cm(y_true, y_pred, score, model_name: str = "baseline") -> list:
     """Hình F11: đường ROC + ma trận nhầm lẫn của mô hình (AML là lớp dương).
 
     Bản 1 vẽ cho pipeline tạm trên tập test 34 mẫu (original_split); khi nhóm chốt mô
-    hình cuối (TV3, công việc 2.3) thì gọi lại với dự đoán của mô hình đó.
+    hình cuối (TV3, công việc 2.3) thì gọi lại với dự đoán của mô hình đó. Dự đoán
+    "uncertain" hiện thành cột riêng của ma trận nhầm lẫn (xem confusion_counts).
     """
-    t, p = _encode(y_true), _encode(y_pred)
+    t = _encode(y_true)
     fig, (ax1, ax2) = plt.subplots(1, 2)
     fpr, tpr, _ = roc_curve(t, score)
     auc = roc_auc_score(t, score)
@@ -426,12 +467,12 @@ def plot_roc_cm(y_true, y_pred, score, model_name: str = "baseline") -> list:
     ax1.set_title("ROC — AML là lớp dương")
     ax1.legend(loc="lower right", fontsize=_FIG_STYLES["report"]["fontsize"])
 
-    cm = confusion_matrix(t, p, labels=[0, 1])
+    cm = confusion_counts(y_true, y_pred)
     sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", cbar=False, square=True,
-                xticklabels=["ALL (dự đoán)", "AML (dự đoán)"],
-                yticklabels=["ALL (thật)", "AML (thật)"], ax=ax2,
+                xticklabels=[c if c == "uncertain" else f"{c} (dự đoán)" for c in cm.columns],
+                yticklabels=[f"{r} (thật)" for r in cm.index], ax=ax2,
                 annot_kws={"fontsize": _FIG_STYLES["report"]["fontsize"] + 2})
-    ax2.set_title("Ma trận nhầm lẫn — tập test 34 mẫu")
+    ax2.set_title(f"Ma trận nhầm lẫn — tập test {len(t)} mẫu")
 
     fig.suptitle(f"Mô hình cuối ({model_name})", fontsize=_FIG_STYLES["report"]["fontsize"] + 3)
     fig.tight_layout()
@@ -460,6 +501,15 @@ def _baseline_pipeline(k: int = 50) -> Pipeline:
     ])
 
 
+def _nested_param_grid() -> dict:
+    """Lưới vòng trong của nested_cv cho pipeline tạm (mục 3.5.1: vòng trong chọn k và siêu tham số).
+
+    k lấy từ nhân tố B của experiment_config.yaml để thiết kế thí nghiệm chỉ khai một nơi;
+    C lấy theo đoạn mã mẫu ở mục 3.5.2 (YAML chưa có lưới C).
+    """
+    return {"select__k": [int(k) for k in _experiment_config()["k"]], "clf__C": [0.01, 0.1, 1, 10]}
+
+
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser(description="Đánh giá pipeline tạm bằng 4 sơ đồ + thí nghiệm selection bias")
     ap.add_argument("--n-permutations", type=int, default=N_PERMS_EVAL,
@@ -482,12 +532,16 @@ def main(argv=None) -> None:
 
     summary, results = [], {}
     for scheme in SCHEMES:
-        res = evaluate(pipe, X, y, scheme, split=samples["split"])
+        # Chỉ nested_cv có vòng trong; thiếu lưới thì nó chỉ là repeated CV với k = 50, C = 1 cố
+        # định và dòng "nested_cv" của summary_evaluation.csv không còn là nested CV.
+        grid = _nested_param_grid() if scheme == "nested_cv" else None
+        res = evaluate(pipe, X, y, scheme, split=samples["split"], param_grid=grid)
         results[scheme] = res
         pf = res["per_fold"]
         summary.append({"scheme": scheme, "bal_acc_mean": res["bal_acc_mean"], "bal_acc_sd": res["bal_acc_sd"],
                         "auc_mean": res["auc_mean"], "sensitivity_mean": pf["sensitivity"].mean(),
-                        "specificity_mean": pf["specificity"].mean(), "n_rows": len(pf)})
+                        "specificity_mean": pf["specificity"].mean(), "n_rows": len(pf),
+                        "inner_folds": res["config"]["inner_folds"]})
         sd = "(1 ước lượng)" if np.isnan(res["bal_acc_sd"]) else f"±{res['bal_acc_sd']:.3f}"
         print(f"{scheme:<15} bal_acc={res['bal_acc_mean']:.3f} {sd:<13} "
               f"auc={res['auc_mean']:.3f}  sens={pf['sensitivity'].mean():.3f}  "

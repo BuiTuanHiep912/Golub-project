@@ -1,0 +1,40 @@
+{
+  "kind": "mcnemar",
+  "desc": "McNemar chính xác: B sai 5 mẫu mà A đúng",
+  "y_true": [
+    "ALL",
+    "ALL",
+    "ALL",
+    "ALL",
+    "ALL",
+    "ALL",
+    "AML",
+    "AML",
+    "AML",
+    "AML"
+  ],
+  "pred_a": [
+    "ALL",
+    "ALL",
+    "ALL",
+    "ALL",
+    "ALL",
+    "ALL",
+    "AML",
+    "AML",
+    "AML",
+    "AML"
+  ],
+  "pred_b": [
+    "AML",
+    "ALL",
+    "ALL",
+    "ALL",
+    "ALL",
+    "ALL",
+    "ALL",
+    "ALL",
+    "ALL",
+    "ALL"
+  ]
+}

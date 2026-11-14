@@ -1,0 +1,14 @@
+testcase17 — wrong_cv nhận bộ chọn kế thừa SelectorMixin dù không tên 'select'
+==============================================================================
+
+MỤC ĐÍCH
+    Kiểm nhánh dự phòng: tìm bước chọn gen theo kiểu SelectorMixin.
+
+ĐẦU VÀO
+    Bước chọn gen tên 'fs' (SelectKBest).
+
+KỲ VỌNG
+    Cắt ngay sau 'fs'.
+
+VÌ SAO QUAN TRỌNG
+    Bộ chọn của TV4 có thể không đặt tên 'select'; vẫn phải tìm được.

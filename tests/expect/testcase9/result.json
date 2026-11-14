@@ -1,0 +1,23 @@
+{
+  "index": [
+    "ALL",
+    "AML"
+  ],
+  "columns": [
+    "ALL",
+    "AML",
+    "uncertain"
+  ],
+  "counts": [
+    [
+      19,
+      0,
+      1
+    ],
+    [
+      0,
+      13,
+      1
+    ]
+  ]
+}

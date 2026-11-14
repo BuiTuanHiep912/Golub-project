@@ -1,0 +1,11 @@
+{
+  "kind": "evaluate",
+  "desc": "evaluate original_split: train 38, test 34, đủ 6 khóa",
+  "scheme": "original_split",
+  "data": {
+    "signal": 4.0,
+    "n_genes": 300,
+    "seed": 0
+  },
+  "k": 10
+}

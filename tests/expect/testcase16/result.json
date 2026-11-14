@@ -1,0 +1,9 @@
+{
+  "pre": [
+    "scale",
+    "select"
+  ],
+  "post": [
+    "clf"
+  ]
+}
