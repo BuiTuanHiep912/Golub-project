@@ -1,0 +1,11 @@
+{
+  "kind": "encode",
+  "desc": "_encode: AML = 1, ALL = 0, còn lại (kể cả 'aml', ' AML') = -1",
+  "labels": [
+    "ALL",
+    "AML",
+    "uncertain",
+    "aml",
+    " AML"
+  ]
+}

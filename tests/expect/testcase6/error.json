@@ -1,0 +1,4 @@
+{
+  "type": "ValueError",
+  "message_contains": "pred_b không cùng tập sample_id"
+}

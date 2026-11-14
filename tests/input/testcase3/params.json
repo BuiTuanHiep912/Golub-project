@@ -1,0 +1,6 @@
+{
+  "kind": "wilson_ci",
+  "desc": "Wilson cho 33/34 — đúng số main() in cho tập test",
+  "n_correct": 33,
+  "n": 34
+}

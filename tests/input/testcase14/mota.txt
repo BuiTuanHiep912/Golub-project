@@ -1,0 +1,15 @@
+testcase14 — evaluate nested_cv có param_grid: chạy vòng trong 5 fold
+=====================================================================
+
+MỤC ĐÍCH
+    Nested CV thật sự: vòng trong GridSearchCV chọn k và C (kế hoạch §3.5.1, mục 3).
+
+ĐẦU VÀO
+    Một seed, lưới k ∈ {5, 10} × C ∈ {0.1, 1}.
+
+KỲ VỌNG
+    5 fold ngoài (15, 15, 14, 14, 14 mẫu), config.inner_folds = 5 lấy từ experiment_config.yaml.
+
+VÌ SAO QUAN TRỌNG
+    Dòng nested_cv của main() từng chạy không có lưới nên không lồng vòng nào; testcase này
+    chốt rằng có lưới thì vòng trong thực sự chạy và được ghi vào config.

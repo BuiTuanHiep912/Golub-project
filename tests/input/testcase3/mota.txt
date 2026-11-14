@@ -1,0 +1,15 @@
+testcase3 — Wilson cho 33/34 — đúng số main() in cho tập test
+=============================================================
+
+MỤC ĐÍCH
+    Kiểm khoảng Wilson ở trường hợp thường gặp nhất: một lỗi trên tập test.
+
+ĐẦU VÀO
+    n_correct = 33, n = 34 (pipeline tạm đúng 33/34 mẫu test).
+
+KỲ VỌNG
+    [0.850844, 0.994789], tính tay bằng công thức Wilson.
+
+VÌ SAO QUAN TRỌNG
+    Đây là con số đi vào báo cáo mục 3.5 (kế hoạch §3.5.1: mỗi lỗi ≈ 3 điểm %, phải báo
+    khoảng tin cậy).
