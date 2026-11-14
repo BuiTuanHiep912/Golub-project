@@ -234,6 +234,21 @@ tái lập được và truy ngược về nguồn.
   5. **Tính xác thực (`verified`):** Gán `yes` cho 49 gen đã kiểm chứng rõ ràng qua NCBI Gene; gán `no` cho các gen cảm ứng chưa đặc trưng rõ (`L47738_at`), không tự ý đoán chức năng theo nguyên tắc quản trị dữ liệu trung thực.
 - **Kiểm thử:** Đã kiểm tra tương thích 100% với hàm `annotate()` của `src/gene_explorer.py` và toàn bộ 113 bài kiểm thử `pytest tests/ -v` đều đạt `PASSED`.
 
+## ADR-061 — Tái thiết kế trực quan hóa Golub et al. (1999) Fig 2 và Fig 4 (`src/viz_redesign.py`)
+- **Ngày:** 15/11/2026 · **Người quyết định:** TV5 (theo ADR-014 của TV1 và Kế hoạch Giai đoạn 2)
+- **Bối cảnh:** Các hình gốc trong bài báo Golub et al. (Science, 1999) sử dụng công nghệ đồ họa cũ (thang xám, thiếu phân tách thành phần lâm sàng, biểu đồ thanh mật độ thô khó quan sát chi tiết từng bệnh nhân). Mục tiêu môn học yêu cầu trực quan hóa hiện đại, an toàn cho người mù màu và tích hợp góc nhìn Quản trị dữ liệu (Data Governance).
+- **Quyết định:** Tạo module `src/viz_redesign.py` và notebook `notebooks/05_viz_redesign.ipynb` độc lập với `src/viz.py` của TV6:
+  1. **Fig 2 (SOM Class Discovery):**
+     - Bảng A: Biểu đồ thanh đối chiếu thành phần mẫu ALL/AML trong 2 nơ-ron SOM 1×2 (38 mẫu train) giữa bài báo gốc và thực nghiệm của nhóm.
+     - Bảng B: Chiếu không gian biểu hiện gen PCA (PC1 vs PC2) kết hợp tọa độ tâm nơ-ron SOM, làm rõ cấu trúc ranh giới cụm tự nhiên.
+     - Bảng C: Khám phá phân nhóm sâu trên mạng SOM 2×2 (4 nơ-ron, 72 mẫu), chứng minh T-ALL không tách khỏi B-ALL ở cấp độ không giám sát (ủng hộ H5 ở mức ALL/AML, bác bỏ ở mức subtype).
+  2. **Fig 4 (Independent Test Set & Error Analysis):**
+     - Bảng A: Biểu đồ ngang xác suất dự đoán P(AML) cho toàn bộ 34 bệnh nhân tập kiểm tra độc lập, phân màu theo kết quả phân loại (ALL đúng, AML đúng, Sai phân loại), vạch rõ ngưỡng quyết định 0.5 và vùng ranh giới/nghi ngờ ([0.3, 0.7]).
+     - Bảng B: Dải kiểm định Quản trị dữ liệu (Governance Tracks) gồm Loại mô (BM vs PB) và Nguồn bệnh viện (DFCI, CALGB, CCG, St-Jude).
+     - Điểm nhấn lâm sàng: Làm nổi bật mẫu 66 (mẫu AML duy nhất bị mô hình đoán nhầm thành ALL, khớp với độ tin cậy thấp PS = 0.11 trong bài báo gốc); khẳng định 5 mẫu máu ngoại vi (PB) vẫn được mô hình phân loại chính xác.
+  3. **Quy chuẩn đồ họa:** Đủ 2 phiên bản `report` (300 dpi, chữ >= 10 pt) và `slide` (150 dpi, chữ >= 16 pt) lưu tại `results/figures/report/` và `results/figures/slides/`. Bảng màu Okabe-Ito: ALL (`#0072B2`), AML (`#E69F00`).
+- **Kiểm thử:** Đã bổ sung `tests/test_viz_redesign.py` (5 test) kiểm tra việc sinh hình, kích thước, định dạng và tính hợp lệ; toàn bộ 118 test suite đạt `PASSED`.
+
 ## Nhật ký nhanh (mục 5.2 kế hoạch)
 
 | Ngày | Quyết định | Lý do | Người quyết định |
@@ -253,3 +268,4 @@ tái lập được và truy ngược về nguồn.
 | 01/11/2026 | 2.2: `src/features.py` bản 1 — 6 bộ chọn gen + `make_selector`, luôn đúng k gen, snr/ttest cân bằng hai phía | ADR-050 | TV4 |
 | 12/11/2026 | 2.2 đổi sang Khám phá gen theo kế hoạch mới: `src/gene_explorer.py`, thay thế ADR-050; schema `gene_annotations.csv` cho TV5 | ADR-051 | TV4 |
 | 14/11/2026 | 2.5: Chú giải 50 gen đặc trưng phân biệt ALL/AML (`gene_annotations.csv`) theo hợp đồng ADR-051 | ADR-060 | TV5 |
+| 15/11/2026 | 2.5: Tái thiết kế trực quan hóa Golub et al. (1999) Fig 2 và Fig 4 (`src/viz_redesign.py`) | ADR-061 | TV5 |
