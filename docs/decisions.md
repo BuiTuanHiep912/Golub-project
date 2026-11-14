@@ -221,6 +221,25 @@ tái lập được và truy ngược về nguồn.
   Lần gọi đầu 0,2–0,7 s, các lần sau < 0,02 s (trước khi có bộ nhớ đệm: 0,5–1 s mỗi lần).
 - **Kiểm tra:** `tests/test_gene_explorer.py` (30 test, dữ liệu tổng hợp cùng cỡ nhóm Golub + 1 test trên dữ liệu thật).
 
+## ADR-040 — Lược đồ kho DuckDB `golub.duckdb` (công việc 2.3, bản 1)
+- **Ngày:** 15/11/2026 · **Người quyết định:** TV3 (theo ADR-014 và *Kế hoạch giai đoạn 2 (hướng mới)*)
+- **Bối cảnh:** TV1, TV2, TV4, TV6 cần một nơi truy vấn chung thay vì tự đọc Parquet; lược đồ hình sao ở
+  Bảng 2.7 mới chỉ có trên giấy.
+- **Quyết định:** `src/warehouse.py` dựng `data/warehouse/golub.duckdb` (không lên Git) từ `load_golub("cleansed")`,
+  `load_golub("curated")` và `standardized/genes.parquet`:
+  - `fact_expression(sample_id, probe_id, value_raw, value_log10)`: dạng dài, 72 × 7129 = 513 288 dòng. Giữ cả giá trị
+    MAS4 gốc (tầng cleansed, có âm) và giá trị log10 (tầng curated) để mọi con số đối chiếu được với tầng gốc.
+  - `dim_sample(sample_id, split, class, subtype, tissue, source, sex, qc_outlier, batch_id)`, khóa chính `sample_id`.
+  - `dim_gene(probe_id, description, is_control)`, khóa chính `probe_id`.
+  - `dim_batch(batch_id, source, n_samples, n_train, n_test, n_all, n_aml, n_bm, n_pb)`: **mỗi phòng lab là một lô,
+    `batch_id` = tên nguồn** (`DFCI`, `CALGB`, `St-Jude`, `CCG`, khớp `BATCH_SOURCES` của `src/ingest.py`).
+  - `fact_qc`: nạp nguyên kết quả `ingest_batches()` của TV2; **TV2 giữ `batch_id` = tên nguồn** để nối được với
+    `dim_batch`. Khi `ingest_batches()` chưa cài đặt thì bỏ qua bảng này và in thông báo, các bảng khác vẫn dựng.
+- **Cách ghi:** ghi ra file tạm rồi thay file cũ, lỗi giữa chừng không để lại kho dở dang. Dựng lại mất khoảng 4 giây.
+- **Truy vấn OLAP:** mỗi câu hỏi nghiệp vụ là một file `sql/NN_<chủ đề>.sql`, có chú thích câu hỏi ở đầu file.
+- **Kiểm tra:** `tests/test_warehouse.py` dựng kho vào thư mục tạm, đối chiếu Bảng 2.4, khóa ngoại, khoảng giá trị
+  và số giá trị âm (147 174).
+
 ## Nhật ký nhanh (mục 5.2 kế hoạch)
 
 | Ngày | Quyết định | Lý do | Người quyết định |
