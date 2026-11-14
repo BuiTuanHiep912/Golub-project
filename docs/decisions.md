@@ -125,6 +125,53 @@ tái lập được và truy ngược về nguồn.
   - Kết luận H5 đổi từ "ủng hộ mạnh" thành "ủng hộ ở mức ALL/AML, không ủng hộ ở mức B-ALL/T-ALL".
 - **Hệ quả:** xóa `F5_clustermap_{report,slide}.png` (bản trùng cũ của F05). Cập nhật `docs/report/3.2_class_discovery.md`, `docs/handover/1.5.md`.
 
+## ADR-013 — Đổi hướng giai đoạn 2: trọng tâm quản trị dữ liệu và trực quan hóa, học máy thành tính năng phụ
+- **Ngày:** 09/11/2026 (giảng viên duyệt) · ghi 15/11/2026 · **Người quyết định:** cả nhóm, giảng viên duyệt · **Người ghi:** TV1
+- **Bối cảnh:** giảng viên nhận xét đề tài nghiêng quá nhiều về học máy so với học phần IT5425 (Quản trị dữ liệu và trực
+  quan hóa), yêu cầu tăng phần quản trị dữ liệu và trực quan hóa có giá trị thực tế; dashboard phải chạy được; giữ phần
+  học máy rút gọn (mô hình Golub và selection bias). Kịch bản mới: một trung tâm xét nghiệm nhận mẫu theo lô từ 4 phòng
+  lab (DFCI, CALGB, St-Jude, CCG), phục vụ ba nhóm người dùng (kỹ thuật viên, nhà nghiên cứu, bác sĩ).
+- **Quyết định** (chi tiết: tài liệu "Kế hoạch giai đoạn 2 (hướng mới)", mục 1):
+  - **Bỏ:** thí nghiệm giai thừa 252 cấu hình (6 phương pháp chọn gen × 6 mức k × 7 bộ phân loại); giả thuyết H2, H4;
+    hình F7 (UpSet), F8 (hiệu năng theo k), F9 (so sánh mô hình) cũ; `src/features.py`, `src/models.py`, `runs.parquet`.
+  - **Giữ:** toàn bộ kết quả giai đoạn 1; mô hình Golub weighted voting kèm PS; thí nghiệm selection bias (F10) làm minh
+    họa hậu quả rò rỉ dữ liệu; giả thuyết H1, H3, H5, H6.
+  - **Thêm:** pipeline nhập theo lô có chặn lô lỗi (2.4); kho DuckDB lược đồ hình sao, truy vấn OLAP, sơ đồ truy vết (2.3);
+    quy trình tải mẫu mới; dashboard Streamlit 3 màn hình (2.6); thiết kế lại Fig. 2, 3A, 4 của bài báo (2.5).
+  - **Hình mới:** F7 = sơ đồ truy vết (TV3); F8 = chất lượng dữ liệu theo phòng lab (TV2); F9 = kết quả truy vấn OLAP
+    (TV3); F10 giữ nguyên (TV2); F11 = kết quả mô hình Golub trên tập kiểm tra (TV1); F12 = PS theo từng mẫu (chuyển từ
+    TV5 sang TV1).
+  - **Phân công:** mỗi thành viên giữ số công việc 2.x, đổi nội dung: 2.1 TV1 mô hình Golub + `patient_profile()`;
+    2.2 TV4 khám phá gen; 2.3 TV3 kho DuckDB; 2.4 TV2 nhập theo lô + chất lượng; 2.5 TV5 thiết kế lại hình + chú giải gen;
+    2.6 TV6 dashboard. Tên file và hàm dùng chung theo mục 4 của kế hoạch; muốn đổi thì ghi vào file này.
+  - **Quy ước dữ liệu:** 38 bệnh nhân huấn luyện là dữ liệu tham chiếu; 34 bệnh nhân kiểm tra đóng vai bệnh nhân mới,
+    không được dùng để huấn luyện, chọn gen hay tính bất kỳ tham số nào.
+- **Hệ quả:**
+  - Thay ADR-009 ở phần F11: F11 không còn là ROC của "mô hình cuối" (TV3) mà là kết quả mô hình Golub (TV1).
+  - `config/experiment_config.yaml` và các chương 4–7 của báo cáo viết theo kế hoạch cũ, cần sửa theo hướng mới.
+  - Cần thêm `duckdb` vào `environment.yml` và `requirements.txt`, cố định phiên bản (ADR-007).
+  - Ngày nộp giả định CN 06/12/2026, sửa khi có ngày chính thức.
+
+## ADR-014 — Lựa chọn cài đặt mô hình Golub weighted voting (công việc 2.1)
+- **Ngày:** 15/11/2026 · **Người quyết định:** TV1
+- **Bối cảnh:** bài báo (thân bài tr. 532, ghi chú 18–21) không nêu đủ chi tiết để cài đặt duy nhất một cách; các lựa
+  chọn nhỏ có thể đổi kết luận: mẫu 66 có PS = 0,30004, chỉ vừa qua ngưỡng 0,3. Công thức và ví dụ tính tay:
+  `docs/report/5.1_mo_hinh_golub.md`.
+- **Quyết định** (`src/golub_wv.py`):
+  - **D1 — Chuẩn hóa:** z-score từng gen theo mean/SD của tập train trước khi bỏ phiếu, đúng ghi chú 19
+    (`standardize=True`, mặc định). Thực hiện trong `fit`, nên mỗi lần lặp LOOCV tự tính lại trên phần huấn luyện.
+    z-score không đổi SNR, nên không đổi tập gen chọn được; chỉ đổi độ lớn phiếu. `standardize=False` chỉ dùng để
+    đối chiếu với ví dụ tính tay.
+  - **D2 — Độ lệch chuẩn:** chia n − 1 (`ddof=1`, mặc định của pandas và hàm `sd()` của R); bài báo không nêu.
+  - **D3 — Số gen lẻ:** báo `ValueError`, vì ghi chú 18 định nghĩa theo n/2 và thí nghiệm lưới k (có k = 5) đã bỏ
+    theo ADR-013. Thay cho ghi chú "TV1 chốt ở 2.1" trong `config/experiment_config.yaml`.
+  - **Gen hằng:** gen có SD = 0 trên train (1050 gen ở ngưỡng sàn) giữ SD = 1 khi chuẩn hóa; gen có σ_ALL + σ_AML = 0
+    được gán SNR = 0 nên không bao giờ được chọn.
+  - **Ngưỡng:** PS < `PS_THRESHOLD` (0,3, `src/config.py`) thì trả `"uncertain"`; PS đúng bằng 0,3 tính là chắc chắn.
+  - **`predict_proba`:** trả tỷ lệ phiếu V_ALL / (V_ALL + V_AML), không phải xác suất hiệu chỉnh; ghi rõ trong docstring.
+- **Hệ quả:** kết quả sơ bộ trên 34 mẫu test (50 gen): 32 dự đoán chắc chắn, 31 đúng, PS trung vị 0,73; bài báo 29/29.
+  Nguyên nhân chênh (tiền xử lý, D2) xem xét ở tuần 2 khi lập bảng so sánh; nếu đổi lựa chọn nào thì cập nhật ADR này.
+
 ## Nhật ký nhanh (mục 5.2 kế hoạch)
 
 | Ngày | Quyết định | Lý do | Người quyết định |
@@ -139,3 +186,5 @@ tái lập được và truy ngược về nguồn.
 | 25/10/2026 | 1.3: H6 kiểm định trong từng lớp (0/15 có ý nghĩa sau BH), không hiệu chỉnh batch; chú thích + test cho `experiment_config.yaml` | ADR-010 | TV1 |
 | 28/10/2026 | 1.4: `src/viz.py` (F2, F2b, F3, F4a–c, F4e), `style_guide.md`, `notebooks/01_eda.ipynb`, `tests/test_viz.py`; F04d giữ nguyên của TV1 | ADR-011 | TV6 |
 | 01/11/2026 | 1.5: sửa bảng chéo lệch `sample_id`, SOM qua 10 seed, notebook tự sinh CSV + F05/F05b/F05c; H5 chỉ ủng hộ ở mức ALL/AML | ADR-012 | TV1 |
+| 09/11/2026 | Đổi hướng giai đoạn 2: quản trị dữ liệu + trực quan hóa là trọng tâm; bỏ thí nghiệm 252 cấu hình, H2, H4; thêm nhập theo lô, kho DuckDB, dashboard 3 màn hình | ADR-013 | Cả nhóm, giảng viên duyệt |
+| 15/11/2026 | 2.1: Golub weighted voting chuẩn hóa z-score theo train, SD chia n − 1, n lẻ báo lỗi, PS < 0,3 là uncertain | ADR-014 | TV1 |
