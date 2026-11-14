@@ -165,6 +165,26 @@ tái lập được và truy ngược về nguồn.
   - `tests/test_interfaces.py` khóa tên hàm dùng chung; đổi tên thì ghi ADR và sửa test cùng lúc.
 - **Hệ quả:** kế hoạch, phân công và hạn giai đoạn 2 nằm trong tài liệu "Kế hoạch giai đoạn 2 (hướng mới)".
 
+## ADR-020 — Lựa chọn cài đặt mô hình Golub weighted voting (công việc 2.1)
+- **Ngày:** 15/11/2026 · **Người quyết định:** TV1
+- **Bối cảnh:** bài báo (thân bài tr. 532, ghi chú 18–21) không nêu đủ chi tiết để cài đặt duy nhất một cách; các lựa
+  chọn nhỏ có thể đổi kết luận: mẫu 66 có PS = 0,30004, chỉ vừa qua ngưỡng 0,3. Công thức và ví dụ tính tay:
+  `docs/report/5.1_mo_hinh_golub.md`.
+- **Quyết định** (`src/golub_wv.py`):
+  - **D1 — Chuẩn hóa:** z-score từng gen theo mean/SD của tập train trước khi bỏ phiếu, đúng ghi chú 19
+    (`standardize=True`, mặc định). Thực hiện trong `fit`, nên mỗi lần lặp LOOCV tự tính lại trên phần huấn luyện.
+    z-score không đổi SNR, nên không đổi tập gen chọn được; chỉ đổi độ lớn phiếu. `standardize=False` chỉ dùng để
+    đối chiếu với ví dụ tính tay.
+  - **D2 — Độ lệch chuẩn:** chia n − 1 (`ddof=1`, mặc định của pandas và hàm `sd()` của R); bài báo không nêu.
+  - **D3 — Số gen lẻ:** báo `ValueError`, vì ghi chú 18 định nghĩa theo n/2 và thí nghiệm lưới k (có k = 5) đã bỏ
+    theo ADR-014. Thay cho ghi chú "TV1 chốt ở 2.1" trong `config/experiment_config.yaml`.
+  - **Gen hằng:** gen có SD = 0 trên train (1050 gen ở ngưỡng sàn) giữ SD = 1 khi chuẩn hóa; gen có σ_ALL + σ_AML = 0
+    được gán SNR = 0 nên không bao giờ được chọn.
+  - **Ngưỡng:** PS < `PS_THRESHOLD` (0,3, `src/config.py`) thì trả `"uncertain"`; PS đúng bằng 0,3 tính là chắc chắn.
+  - **`predict_proba`:** trả tỷ lệ phiếu V_ALL / (V_ALL + V_AML), không phải xác suất hiệu chỉnh; ghi rõ trong docstring.
+- **Hệ quả:** kết quả sơ bộ trên 34 mẫu test (50 gen): 32 dự đoán chắc chắn, 31 đúng, PS trung vị 0,73; bài báo 29/29.
+  Nguyên nhân chênh (tiền xử lý, D2) xem xét ở tuần 2 khi lập bảng so sánh; nếu đổi lựa chọn nào thì cập nhật ADR này.
+
 ## ADR-050 — Quy ước của `src/features.py` (công việc 2.2, bản 1; đã thay thế bởi ADR-051)
 - **Ngày:** 01/11/2026 · **Người quyết định:** TV4
 - **Giao diện:** 6 bộ chọn `snr, ttest, lasso, enet, rf, svm_rfe` (đúng tên trong `experiment_config.yaml`),
@@ -258,3 +278,4 @@ tái lập được và truy ngược về nguồn.
 | 09/11/2026 | Đổi hướng giai đoạn 2 sang quản trị dữ liệu và dashboard; dựng khung file, lệnh `make`, giữ trước số ADR | ADR-014 | TV1 (giảng viên duyệt) |
 | 01/11/2026 | 2.2: `src/features.py` bản 1 — 6 bộ chọn gen + `make_selector`, luôn đúng k gen, snr/ttest cân bằng hai phía | ADR-050 | TV4 |
 | 12/11/2026 | 2.2 đổi sang Khám phá gen theo kế hoạch mới: `src/gene_explorer.py`, thay thế ADR-050; schema `gene_annotations.csv` cho TV5 | ADR-051 | TV4 |
+| 15/11/2026 | 2.1: Golub weighted voting chuẩn hóa z-score theo train, SD chia n − 1, n lẻ báo lỗi, PS < 0,3 là uncertain | ADR-020 | TV1 |
