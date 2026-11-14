@@ -221,6 +221,19 @@ tái lập được và truy ngược về nguồn.
   Lần gọi đầu 0,2–0,7 s, các lần sau < 0,02 s (trước khi có bộ nhớ đệm: 0,5–1 s mỗi lần).
 - **Kiểm tra:** `tests/test_gene_explorer.py` (30 test, dữ liệu tổng hợp cùng cỡ nhóm Golub + 1 test trên dữ liệu thật).
 
+## ADR-060 — Chú giải 50 gen đặc trưng phân biệt ALL/AML (`gene_annotations.csv`)
+- **Ngày:** 14/11/2026 · **Người quyết định:** TV5 (theo hợp đồng ADR-051 với TV4)
+- **Bối cảnh:** TV4 (`src/gene_explorer.py`, ADR-051) và TV6 (dashboard) cần dữ liệu chú giải chức năng sinh học, dòng tế bào và liên kết cơ sở dữ liệu cho các gen xếp hạng hàng đầu để người dùng hiểu ý nghĩa sinh học thay vì chỉ nhìn mã probe Affymetrix hoặc tên mô tả thô.
+- **Quyết định:** Tạo `results/gene_lists/gene_annotations.csv` cho top 50 gen phân biệt ALL/AML từ `gene_ranking.csv` (1.6), tuân thủ đúng hợp đồng 6 cột của ADR-051:
+  `probe_id, gene_symbol, function, cell_lineage, source_url, verified`.
+- **Nguyên tắc chú giải:**
+  1. **Nguồn gốc:** Tra cứu chính xác từ cơ sở dữ liệu NCBI Gene / GeneCards; `source_url` trỏ về trang thông tin định danh gen chuẩn (ví dụ `https://www.ncbi.nlm.nih.gov/gene/<GeneID>`).
+  2. **Ký hiệu gen:** Cập nhật ký hiệu chuẩn HGNC cho các probe có mô tả thô (ví dụ: `X95735_at` -> `ZYX`, `U50136_rna1_at` -> `LTC4S`, `M84526_at` -> `CFD`, `U05259_rna1_at` -> `CD79A`, `X82240_rna1_at` -> `TCL1A`).
+  3. **Chức năng sinh học (`function`):** Mô tả ngắn gọn cơ chế hoạt động, phân loại phân tử, vai trò trong bệnh học bạch cầu (leukemia) và ý nghĩa phân biệt ALL/AML.
+  4. **Dòng tế bào (`cell_lineage`):** Xác định thuộc dòng tủy (`myeloid`) hay dòng lympho (`lymphoid`), giải thích trực tiếp tại sao gen biểu hiện lệch mạnh giữa AML và ALL.
+  5. **Tính xác thực (`verified`):** Gán `yes` cho 49 gen đã kiểm chứng rõ ràng qua NCBI Gene; gán `no` cho các gen cảm ứng chưa đặc trưng rõ (`L47738_at`), không tự ý đoán chức năng theo nguyên tắc quản trị dữ liệu trung thực.
+- **Kiểm thử:** Đã kiểm tra tương thích 100% với hàm `annotate()` của `src/gene_explorer.py` và toàn bộ 113 bài kiểm thử `pytest tests/ -v` đều đạt `PASSED`.
+
 ## Nhật ký nhanh (mục 5.2 kế hoạch)
 
 | Ngày | Quyết định | Lý do | Người quyết định |
@@ -239,3 +252,4 @@ tái lập được và truy ngược về nguồn.
 | 09/11/2026 | Đổi hướng giai đoạn 2 sang quản trị dữ liệu và dashboard; dựng khung file, lệnh `make`, giữ trước số ADR | ADR-014 | TV1 (giảng viên duyệt) |
 | 01/11/2026 | 2.2: `src/features.py` bản 1 — 6 bộ chọn gen + `make_selector`, luôn đúng k gen, snr/ttest cân bằng hai phía | ADR-050 | TV4 |
 | 12/11/2026 | 2.2 đổi sang Khám phá gen theo kế hoạch mới: `src/gene_explorer.py`, thay thế ADR-050; schema `gene_annotations.csv` cho TV5 | ADR-051 | TV4 |
+| 14/11/2026 | 2.5: Chú giải 50 gen đặc trưng phân biệt ALL/AML (`gene_annotations.csv`) theo hợp đồng ADR-051 | ADR-060 | TV5 |
