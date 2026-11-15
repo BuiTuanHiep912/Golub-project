@@ -66,6 +66,15 @@ Mô tả đầy đủ từng tầng và từng cột: `docs/data_dictionary.md`.
 | Lỗi mạng khi tải | Chạy lại `make fetch` (file đã tải đúng sẽ được bỏ qua). Nếu vẫn lỗi, tải tay theo đường dẫn trong `data/raw/SOURCES.md` vào đúng thư mục rồi chạy `make fetch` để kiểm MD5 |
 | `Tầng curated chưa có ...` | Chưa chạy Bước 3, hoặc chạy chưa hết — chạy lại `make data` |
 
+## Dashboard (công việc 2.6, TV6)
+```bash
+make app                                # mở dashboard; mặc định dùng DỮ LIỆU GIẢ (khung giao diện)
+GOLUB_APP_DATA=real make app            # dùng hàm thật của TV1/TV2/TV4 khi đã bàn giao (Windows: set GOLUB_APP_DATA=real)
+python3 -m pytest tests/test_app_smoke.py
+```
+Trang chỉ gọi hàm qua `app/components/backend.py`; dữ liệu giả nằm ở `app/components/mock_data.py` và trùng định dạng
+với giao diện đã khóa (mục 4 kế hoạch). Số liệu giả không được dùng trong báo cáo.
+
 ## Cấu trúc
 | Thư mục | Nội dung |
 |---|---|
