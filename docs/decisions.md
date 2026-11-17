@@ -165,6 +165,33 @@ tái lập được và truy ngược về nguồn.
   - `tests/test_interfaces.py` khóa tên hàm dùng chung; đổi tên thì ghi ADR và sửa test cùng lúc.
 - **Hệ quả:** kế hoạch, phân công và hạn giai đoạn 2 nằm trong tài liệu "Kế hoạch giai đoạn 2 (hướng mới)".
 
+## ADR-030 — Nhập theo lô và kiểm tra file mẫu mới (`src/ingest.py`, công việc 2.4)
+- **Ngày:** 12/11/2026 · **Người quyết định:** TV2
+- **Bối cảnh:** nhánh `2.4-ingest` (commit `7717555`) có `ingest_lots()` chia "lô" theo 4 file raw và
+  `validate_new_sample(sample: dict)` trả `{valid, errors, warnings, normalized}` — lệch giao diện khóa
+  ở ADR-014 (`ingest_batches()`, `validate_new_sample(path)` → `{ok, errors, warnings, values}`),
+  `tests/test_interfaces.py` báo `src.ingest thiếu ['ingest_batches']`. Viết lại trên nhánh `2.4-ingest-v2`.
+- **Quyết định:**
+  - Lô = mọi mẫu của một phòng lab (`source`): B1-DFCI, B2-CALGB, B3-St-Jude, B4-CCG, tách từ tầng
+    standardized. Nguồn lạ hoặc thiếu vẫn thành một lô riêng để bị chặn, không lặng lẽ bỏ qua.
+  - **Chặn lô** khi vi phạm ràng buộc cấu trúc/quan hệ: thiếu/thừa/trùng probe, ô trống, giá trị không
+    phải số, `sample_id` trống/trùng/đã thuộc lô khác, metadata bắt buộc thiếu hoặc ngoài danh mục, lô
+    nhiều nguồn, `class` lệch `subtype`, call ngoài P/A/M. Chặn một lô không ảnh hưởng lô khác.
+  - **Không chặn** theo chỉ số chất lượng (tương quan, tỷ lệ P, `qc_outlier`): chỉ báo cáo, cùng tinh
+    thần ADR-004. Quy tắc gắn cờ theo mẫu tách thành `src.quality.sample_qc()` dùng chung cho tầng
+    cleansed và ingest (quality_report.md và cờ của cleansed không đổi, đã đối chiếu).
+  - Lô thêm từ file CSV (`ingest_batches(extra_files=...)`) để demo lô lỗi; chỉ số của lô thêm đo so
+    với các lô thật nên không làm đổi cờ của 72 mẫu thật.
+  - Đầu ra (`write=True`, `make ingest`) ở `data/cleansed/`: `batches.parquet` (→ `dim_batch`),
+    `qc_samples.parquet` (→ `fact_qc`), `ingest_log.csv` ghi thêm mỗi lần chạy. Mặc định
+    `ingest_batches()` không ghi file để dashboard gọi trực tiếp. Thêm `sample_quality()` (bảng theo mẫu).
+  - `validate_new_sample(path)`: CSV `probe_id,value`, đủ 7129 probe chuẩn, không trùng/trống/không số;
+    nhận cả đối tượng file (nút tải của Streamlit). Có > 90% giá trị < 100 thì báo lỗi "đã log hóa / sai
+    thang" (72 chip thật: 40–56%). Chip lệch 38 mẫu tham chiếu (modified z của tương quan trung vị,
+    trung vị, IQR; ngưỡng 3.5 như ADR-004) chỉ cảnh báo. Đã chạy cả 34 bệnh nhân tập test: đều `ok`,
+    không cảnh báo nhầm.
+- **Kiểm thử:** `tests/test_ingest.py` (20 test trên dữ liệu thật; báo lỗi, không skip khi thiếu dữ liệu).
+
 ## Nhật ký nhanh (mục 5.2 kế hoạch)
 
 | Ngày | Quyết định | Lý do | Người quyết định |
@@ -181,3 +208,4 @@ tái lập được và truy ngược về nguồn.
 | 01/11/2026 | 1.5: sửa bảng chéo lệch `sample_id`, SOM qua 10 seed, notebook tự sinh CSV + F05/F05b/F05c; H5 chỉ ủng hộ ở mức ALL/AML | ADR-012 | TV1 |
 | 04/11/2026 | 2.4: `mcnemar_test` ghép theo `sample_id`; F11 giữ cột "uncertain"; `nested_cv` có vòng trong chọn k, C; thêm bộ golden-file 19 testcase | ADR-013 | TV2 |
 | 09/11/2026 | Đổi hướng giai đoạn 2 sang quản trị dữ liệu và dashboard; dựng khung file, lệnh `make`, giữ trước số ADR | ADR-014 | TV1 (giảng viên duyệt) |
+| 12/11/2026 | 2.4: `src/ingest.py` theo giao diện ADR-014 — 4 lô theo nguồn, chặn lô lỗi, nhật ký, `validate_new_sample(path)`; tách `quality.sample_qc()` dùng chung | ADR-030 | TV2 |

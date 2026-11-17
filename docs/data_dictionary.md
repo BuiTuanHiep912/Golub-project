@@ -72,6 +72,47 @@ giải danh sách gen (TV4, TV5) phải gộp theo `description`, không theo `p
 Kết quả hiện tại: **mẫu 21** bị gắn cờ (tương quan trung vị 0.756 so với trung vị chung 0.832,
 z = −4.7). Lý do từng mẫu ghi trong `quality_report.md`; **không xóa mẫu** khi chưa có căn cứ.
 
+### Chất lượng theo lô — sinh bởi `make ingest` (`python -m src.ingest`, TV2 2.4, ADR-030)
+
+Một lô = mọi mẫu của một phòng lab (`source`): B1-DFCI (44 mẫu), B2-CALGB (15), B3-St-Jude (8),
+B4-CCG (5). Ba file dưới đây nằm cạnh `quality_report.md` trong `data/cleansed/`; tên file là
+hằng `BATCHES_FILE`, `QC_FILE`, `LOG_FILE` trong `src/ingest.py`.
+
+| File | Bảng kho (TV3) | Hạt (grain) | Ghi chú |
+|---|---|---|---|
+| `batches.parquet` | `dim_batch` | một hàng mỗi lô | ghi đè mỗi lần chạy |
+| `qc_samples.parquet` | `fact_qc` | một hàng mỗi mẫu | ghi đè mỗi lần chạy; mẫu của lô hỏng cấu trúc không có hàng |
+| `ingest_log.csv` | — | một hàng mỗi lô mỗi lần chạy | **ghi thêm**, không ghi đè (nhật ký) |
+
+`batches.parquet`:
+
+| Cột | Kiểu | Ý nghĩa |
+|---|---|---|
+| `batch_id` | str | `B<i>-<source>`; lô thêm từ file CSV mang tên file |
+| `source` | str | phòng lab gửi lô |
+| `n_samples`, `n_train`, `n_test`, `n_ALL`, `n_AML` | int | số mẫu |
+| `status` | str | `passed` / `blocked` |
+| `reason` | str | lỗi chặn lô, nối bằng `; ` (rỗng khi `passed`) |
+| `warnings` | str | ghi chú không chặn (thiếu `sex`, mẫu gắn cờ `qc_outlier`) |
+| `pct_below_100`, `pct_above_16000` | float [0, 1] | tỷ lệ ô ngoài vùng đo tin cậy (trung bình theo mẫu) |
+| `present_rate` | float [0, 1] | trung vị theo mẫu của tỷ lệ probe có call `P` |
+| `median_corr_other` | float | trung vị theo mẫu của tương quan (log10) với mẫu các lô khác — thấp = lô lệch |
+| `n_qc_outlier` | int | số mẫu gắn cờ `qc_outlier` |
+| `origin` | str | `standardized` hoặc tên file lô thêm |
+
+`qc_samples.parquet`: `sample_id`, `batch_id`, `source`, `split`, `class`, `median_log10`, `iqr_log10`,
+`median_corr`, `median_corr_other`, `present_rate`, `pct_below_100`, `pct_above_16000`, `qc_outlier`,
+`qc_reason`, `batch_status`. Cờ `qc_outlier` của 72 mẫu thật **trùng** cột cùng tên ở
+`cleansed/samples.parquet` (cùng hàm `src.quality.sample_qc`).
+
+`ingest_log.csv`: `run_at` (UTC, ISO 8601), `batch_id`, `source`, `n_samples`, `status`, `reason`.
+
+### File chip của một mẫu mới (đầu vào của `validate_new_sample`)
+
+CSV đúng hai cột `probe_id,value`, mỗi dòng một probe (đủ 7129 probe của `genes.parquet`, thứ tự
+tùy ý), giá trị ở thang MAS4 gốc như `data/raw` (chưa threshold/log, được phép âm). Kết quả `values`
+là Series float theo thứ tự `genes.parquet`, dùng thẳng cho `patient_profile(values=...)` (TV1).
+
 ## 4. Các phép biến đổi ở tầng curated (công việc 1.2 — TV3)
 
 1. Threshold `[100, 16000]` → 2. `log10` → `X_log10.parquet` (mọi mô hình dùng bản này).
