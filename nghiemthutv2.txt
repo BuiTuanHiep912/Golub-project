@@ -1,0 +1,188 @@
+# HIỂU CÔNG VIỆC TV2 ĐỂ BÁO CÁO NGHIỆM THU
+
+> Bản giải thích bằng lời thường, viết ngày 18/11/2026. Không cần đọc code vẫn hiểu được.
+> Số liệu lấy từ `results/metrics/*.csv` và `data/cleansed/batches.parquet`. Số của phần 2.4 là bản
+> mới (học trên 38 mẫu), nằm ở nhánh `2.4-f8-f10-demo-v2`, chưa merge vào `main` (xem "Hai bẫy" ở cuối).
+>
+> Dòng "→ Code" chỉ chỗ trong code, dạng `file:số dòng`, tính trên `main` ngày 18/11/2026. Chỗ ghi
+> "(nhánh f8)" là code ở nhánh `2.4-f8-f10-demo-v2`, chưa merge.
+
+## Một câu cho toàn bộ
+
+TV2 làm hai việc:
+- **Đưa dữ liệu vào cho sạch và đáng tin** (giai đoạn 1).
+- **Làm "cây thước" chung để cả nhóm chấm mô hình trung thực** (giai đoạn 2), kèm một thí nghiệm chứng
+  minh chấm sai cách sẽ ra điểm ảo.
+
+Từ 09/11 có thêm việc **nhập dữ liệu theo từng lô và kiểm tra file của bệnh nhân mới**.
+
+## Bối cảnh
+
+- Có 72 bệnh nhân ung thư máu thuộc hai loại: ALL (47 người) và AML (25 người).
+- Mỗi người có một con chip đo 7129 gen, nên dữ liệu là bảng 72 hàng × 7129 cột. Bài toán: nhìn 7129 con
+  số, đoán người đó bị ALL hay AML.
+- 38 người dùng để học, 34 người dùng để thi. Nhóm quy ước 34 người này là "bệnh nhân mới", không được
+  dùng ở bất kỳ bước học nào.
+- **Điểm mấu chốt:** số gen gấp gần 200 lần số người học, nên rất dễ tìm ra "quy luật" chỉ do may rủi.
+  Ý này xuyên suốt cả phần 2.4.
+
+## Việc 1.1: nạp, ghép, kiểm tra (đã xong)
+
+**Ghép dữ liệu.** Dữ liệu đến từ hai nơi:
+- Kaggle: số đo gen và nhãn ALL/AML.
+- OpenIntro: thông tin phụ (mẫu lấy từ tủy hay máu, phòng lab nào, giới tính).
+
+Việc này giống ghép hai file Excel. Cái bẫy là file OpenIntro không xếp theo mã bệnh nhân. Nếu ghép theo
+thứ tự dòng, thông tin của người này sẽ bị dán sang người khác mà không có báo lỗi nào. Code xử lý như sau:
+- Ghép theo **mã bệnh nhân**, không theo thứ tự dòng.
+- Trước khi ghép: kiểm tra 3 nguồn có đúng cùng 72 mã.
+- Sau khi ghép: kiểm tra nhãn của hai nguồn khớp nhau 72/72.
+
+→ Code: `src/load.py` — `build()` :214; kiểm tra trước ghép `_assert_same_ids()` :231 (định nghĩa :265);
+ghép theo mã :236–237 (`.join(..., validate="one_to_one")`); kiểm tra sau ghép `_assert_post_merge()` :242
+(định nghĩa :278).
+
+**Kiểm tra chất lượng ở 4 mức**, mỗi mức trả lời một câu hỏi:
+
+| Mức | Câu hỏi | Ví dụ |
+|---|---|---|
+| Từng ô | Có ô trống, số âm, số quá nhỏ hoặc quá lớn không? | Số < 100 nằm trong vùng máy đo không tin cậy, chỉ ghi lại |
+| Danh mục | Giá trị có nằm trong danh sách cho phép không? | Phòng lab phải là DFCI, CALGB, St-Jude hoặc CCG. Giới tính thiếu 23/72 thì để nguyên, không đoán |
+| Từng bệnh nhân | Có ai bị trùng, có chip nào "lạ" không? | Mẫu 21 (xem bên dưới) |
+| Giữa các bảng | Các bảng có khớp nhau và khớp bài báo không? | Số người train/test theo từng loại ALL/AML đúng như bảng trong bài báo |
+
+Gặp lỗi nặng thì dừng cả dây chuyền. Chỉ đáng ngờ thì ghi chú lại rồi đi tiếp.
+
+→ Code: `src/quality.py` — `run_quality()` :235 gọi lần lượt 4 mức ở :255–258: `check_value()` :127,
+`check_value_set()` :143, `check_record()` :164, `check_relation()` :200. Dừng dây chuyền bằng
+`QualityCheckError` :55. Danh mục cho phép: `src/config.py:55–58`.
+
+**Mẫu 21.** Mọi chip đo cùng 7129 gen, nên chip của hai người thường có "hình dạng" giống nhau: gen nào
+cao ở người này thì cũng cao ở người kia.
+- Mức giống nhau đo bằng hệ số tương quan, thường quanh 0.8. Mẫu 21 chỉ được 0.756, thấp hơn hẳn cả nhóm.
+- "Thấp hơn hẳn" được đo bằng modified z-score: mẫu cách mức thông thường bao nhiêu bước. Cách tính dùng
+  trung vị để chính mẫu lạ không kéo lệch thước đo.
+- Vượt 3.5 thì coi là lạ (ngưỡng theo quy ước); mẫu 21 là −4.7.
+- Mẫu này **chỉ bị gắn cờ, không bị xóa**: 72 mẫu vốn đã quá ít, và chip lạ chưa chắc là chip sai.
+
+→ Code: `src/quality.py` — tương quan `sample_correlation()` :76; modified z-score `modified_z()` :63; ngưỡng
+`MODZ_THRESHOLD = 3.5` :42; quy tắc gắn cờ `_outlier_reasons()` :88 (theo tương quan :99, theo trung vị/IQR
+:105); cột `qc_outlier` gán ở `sample_qc()` :119.
+
+**Các tầng dữ liệu**, so với việc nấu ăn:
+- **raw**: đồ mới mua về. Mỗi file có "dấu vân tay" MD5 để biết không bị sửa.
+- **standardized**: sơ chế, đã ghép thành bảng chuẩn.
+- **cleansed**: đã kiểm định và gắn cờ, không sửa con số nào.
+- **curated**: TV3 "nấu" (cắt ngưỡng, lấy log, lọc gen). Mô hình dùng dữ liệu ở tầng này.
+
+→ Code: đường dẫn các tầng `src/config.py:25–31`; tải và đối chiếu MD5 `src/fetch.py` `fetch()` :54; đọc một
+tầng `load_golub(layer)` `src/load.py:327`.
+
+## Việc 2.4 phần A: cây thước chung
+
+Hãy coi mô hình là học sinh, 38 mẫu học là đề luyện có đáp án, 34 mẫu thi là đề thi thật. Hàm
+`evaluate()` có 4 cách chấm:
+- **original_split**: học hết 38 câu, thi 34 câu. Chấm một lần, ra một điểm.
+- **loocv**: làm 38 lượt. Mỗi lượt giấu 1 câu, học 37 câu còn lại rồi làm câu bị giấu. Đây là cách chấm
+  của bài báo.
+- **nested_cv**: chia 38 mẫu thành 5 phần, lần lượt lấy 1 phần làm bài kiểm tra. Việc chọn "cài đặt" (ví
+  dụ dùng bao nhiêu gen) chỉ làm trên 4 phần học, không nhìn phần kiểm tra. Lặp 10 lần với 10 cách chia
+  khác nhau, ra điểm trung bình ± độ dao động.
+- **wrong_cv**: cách sai, làm cố ý. Chọn gen bằng cả 38 mẫu, kể cả phần sẽ dùng để kiểm tra, rồi mới
+  chia. Giống như được xem đề trước khi ôn. Cách này chỉ dùng cho thí nghiệm.
+
+→ Code: `src/evaluate.py` — `evaluate()` :238; original_split :295; loocv :300; nested_cv :317, vòng trong
+`GridSearchCV` :282–283, lưới `_nested_param_grid()` :504; wrong_cv cố ý rò rỉ :318–321 (cắt pipeline tại
+bước chọn gen bằng `_split_at_selector()` :205).
+
+Cách đọc bảng kết quả:
+- **Balanced accuracy** là trung bình của "% ca ALL đoán đúng" và "% ca AML đoán đúng". Dùng chỉ số này vì
+  hai loại lệch số lượng: một mô hình lười luôn nói "ALL" vẫn đúng 20/34 = 59% đề thi, nhưng balanced
+  accuracy chỉ được 0.5, lộ ngay là vô dụng.
+- **AUC**: bốc ngẫu nhiên một người AML và một người ALL. AUC là xác suất mô hình chấm người AML "giống AML
+  hơn" người ALL. 1 là hoàn hảo, 0.5 là đoán mò.
+- **Sensitivity**: tỷ lệ ca AML bắt được. **Specificity**: tỷ lệ ca ALL được nói đúng là ALL.
+- **Khoảng Wilson**: đúng 33/34 là 97%, nhưng chỉ có 34 người nên tỷ lệ thật có thể nằm bất kỳ đâu trong
+  khoảng [85%, 99.5%].
+- **McNemar**: so hai mô hình trên cùng một nhóm bệnh nhân, chỉ đếm những ca hai mô hình trả lời khác nhau.
+- **"uncertain"**: mô hình của Golub được phép từ chối trả lời. Khung chấm tính câu từ chối là sai.
+
+→ Code: `src/evaluate.py` — `_metrics()` :158 (balanced accuracy, AUC, sensitivity, specificity); `wilson_ci()`
+:67; `mcnemar_test()` :84 (ghép theo mã bệnh nhân :103–105); `confusion_counts()` :122; "uncertain" thành sai
+ở `_encode()` :140. AML là lớp dương: `src/config.py:47`.
+
+**Kết quả với mô hình minh họa.** Đây không phải mô hình cuối; mô hình thật là weighted voting của TV1.
+- Đề thi: đúng 33/34. Chỉ sai bệnh nhân 66 (bị AML nhưng đoán là ALL).
+- nested_cv: 0.92 ± 0.14. Dao động lớn vì mỗi phần kiểm tra chỉ khoảng 8 người, trong đó 2–3 ca AML: sai
+  1 ca AML là điểm tụt 0.17–0.25.
+
+→ Code: mô hình minh họa `_baseline_pipeline()` `src/evaluate.py:490` (bản tầng curated: :482, nhánh f8);
+chạy cả 4 cách chấm bằng `main()` :513, ghi `results/metrics/summary_evaluation.csv`. Học trên 38 mẫu:
+`main()` :517, :527 (nhánh f8).
+
+## Việc 2.4 phần B: thí nghiệm selection bias, phần đáng nói nhất
+
+1. **Câu hỏi:** chọn gen trước rồi mới chấm (cách sai) có làm điểm bị thổi phồng không?
+2. **Mẹo:** xáo bừa nhãn ALL/AML giữa 38 người. Lúc này không gen nào thật sự liên quan tới nhãn, nên cách
+   chấm trung thực phải ra khoảng 0.5, như tung đồng xu.
+3. **Cách làm:** xáo 100 lần, mỗi lần chấm bằng cả hai cách.
+4. **Kết quả:** cách đúng được **0.51**, đúng như tung đồng xu. Cách sai được **0.83**, tức là "tìm ra quy
+   luật" trong dữ liệu bừa.
+5. **Lý do:** với 7129 gen mà chỉ 38 người, kiểu gì cũng có vài chục gen tình cờ khớp với nhãn bừa. Cách
+   sai chọn đúng những gen đó bằng cả phần kiểm tra, nên phần kiểm tra đã bị lộ đáp án.
+6. **Kết luận (giả thuyết H3):** chọn gen bên ngoài vòng chấm làm điểm bị thổi phồng rõ rệt, khớp với
+   Ambroise & McLachlan (2002). Hình F10 vẽ đúng 4 nhóm kết quả này.
+
+→ Code: `src/evaluate.py` — `selection_bias_experiment()` :349 (xáo nhãn :368, chấm bằng cả hai cách :372);
+`summarize_selection_bias()` :379; hình F10 `plot_selection_bias()` :417. Chạy trên 38 mẫu: :556 (nhánh f8).
+
+## Việc 2.4 phần C: nhập theo lô (thêm từ 09/11)
+
+- Trong thực tế, dữ liệu đến từng đợt từ từng phòng lab. Vì vậy nhóm chia 72 mẫu thành 4 lô theo lab:
+  DFCI 44, CALGB 15, St-Jude 8, CCG 5.
+- Mỗi lô được kiểm tra trước khi vào kho. Gặp lỗi cấu trúc (thiếu gen, ô trống, mã trùng, tên lab lạ…)
+  thì **chặn cả lô**; các lô khác không bị ảnh hưởng.
+- **Kết quả:** cả 4 lô đều đạt. St-Jude có tỷ lệ gen "đo chắc chắn có mặt" thấp nhất (24%, so với 30% ở
+  DFCI). Điều này khớp với ghi chú của bài báo rằng St-Jude xử lý mẫu theo quy trình khác.
+- `validate_new_sample` kiểm tra file chip của một bệnh nhân mới trước khi đưa vào dashboard. Đã thử với cả
+  34 bệnh nhân thi: tất cả đều qua, không có cảnh báo nhầm.
+- Có sẵn bộ 13 file cố ý chứa lỗi để demo (thiếu gen, sai mã gen, ô trống, file đã lấy log…). Mỗi file bị
+  bắt đúng lỗi của nó.
+
+→ Code: `src/ingest.py` — `ingest_batches()` :329; chia 4 lô theo lab `_real_batches()` :100; luật chặn lô
+`_check_batch()` :163; gán passed/blocked :293; `sample_quality()` :354; `validate_new_sample()` :366 (luật
+"file đã lấy log" :451, cảnh báo chip lệch từ :455). Bộ file demo `write_demo_files()` `src/ingest.py:493`
+(nhánh f8), chạy `python -m src.ingest --demo`. Hình F8 `plot_batch_quality()` `src/viz_ingest.py:37`
+(nhánh f8).
+
+## Đọc file test thế nào
+
+Mỗi test có 3 bước: **dựng tình huống → chạy → khẳng định kết quả**. Test dùng dữ liệu giả để biết trước
+đáp án đúng.
+
+Ví dụ trong `tests/test_quality.py`:
+- **Test 1:** tạo 72 chip giả giống nhau, làm hỏng chip 50, chạy kiểm tra, rồi khẳng định chỉ đúng mẫu 50
+  bị gắn cờ. Khối `ROOT CAUSE` ở đầu test ghi lại lỗi cũ mà test này ngăn tái diễn: code cũ không gắn cờ
+  được mẫu nào, và khi có gắn thì gắn nhầm người.
+- **Test 2:** dữ liệu sạch thì không ai bị gắn cờ, chạy đủ 4 mức, không có lỗi FAIL.
+- **Test 3:** đổi phân nhóm của bệnh nhân 1 (đang là ALL) thành AML. Kiểm tra phải dừng, báo "KHÔNG ĐẠT"
+  và chỉ ra mẫu 1.
+
+`tests/test_evaluate.py` cũng vậy: dữ liệu giả có 10 gen "mang tín hiệu", các gen còn lại là nhiễu. Test
+đáng nhớ nhất là `test_wrong_cv_inflates_accuracy_on_pure_noise`, chính là thí nghiệm H3 thu nhỏ: khi không
+có tín hiệu nào, cách đúng phải dưới 0.65, cách sai phải trên 0.75.
+
+→ Code: `tests/test_quality.py` :57 (test 1), :84 (test 2), :100 (test 3); `tests/test_evaluate.py:95` (H3 thu
+nhỏ). Test golden-file: mỗi thư mục `tests/input/testcaseN/` có `mota.txt` mô tả tình huống.
+
+## Hai bẫy cụ thể khi báo cáo
+
+1. **Số liệu nằm ở hai nơi và khác nhau.**
+   - `main` đang chứa số cũ, học trên 72 mẫu: 0.501 / 0.807.
+   - Nháp báo cáo dùng số mới, học trên 38 mẫu: 0.510 / 0.826. Số này nằm ở nhánh F8/F10
+     (`2.4-f8-f10-demo-v2`), **chưa merge**.
+   - Kết luận như nhau, nhưng ai mở `main` sẽ thấy số khác. Khi báo cáo, hãy nói rõ đang dùng bản nào.
+2. **Có hai việc AI tự quyết, TV2 phải tự chốt:**
+   - Hình F8 ("chất lượng theo lô") là AI tự suy ra định nghĩa, chưa ai xác nhận. Cần hỏi TV1.
+   - Thí nghiệm chạy trên 38 mẫu thay vì 72, theo quy ước mới. TV2 cần đồng ý với lựa chọn này và giải
+     thích được lý do.
