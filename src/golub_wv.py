@@ -145,6 +145,21 @@ def _check_frame(X) -> None:
     if not isinstance(X, pd.DataFrame):
         raise TypeError(f"X phải là pandas DataFrame (cột = probe id), nhận {type(X).__name__}")
 
+def loocv(X: pd.DataFrame, y, n_genes: int = 50, ps_threshold: float = PS_THRESHOLD) -> pd.DataFrame:
+    """Leave-one-out trên X: mỗi lượt bỏ một mẫu, fit lại TỪ ĐẦU trên phần còn lại, rồi đoán mẫu bị bỏ.
+
+    Trả về DataFrame index = sample_id, cột [true, pred, ps].
+    """
+    y = pd.Series(np.asarray(y), index=X.index)
+    rows = []
+    for sid in X.index:
+        keep = X.index != sid
+        clf = GolubWeightedVoting(n_genes, ps_threshold).fit(X[keep], y[keep])
+        one = X.loc[[sid]]
+        rows.append({"sample_id": sid, "true": y[sid],
+                     "pred": clf.predict(one)[0],
+                     "ps": float(clf.prediction_strength(one)[0])})
+    return pd.DataFrame(rows).set_index("sample_id")
 
 if __name__ == "__main__":
     from src.load import load_golub
