@@ -182,8 +182,12 @@ tái lập được và truy ngược về nguồn.
     được gán SNR = 0 nên không bao giờ được chọn.
   - **Ngưỡng:** PS < `PS_THRESHOLD` (0,3, `src/config.py`) thì trả `"uncertain"`; PS đúng bằng 0,3 tính là chắc chắn.
   - **`predict_proba`:** trả tỷ lệ phiếu V_ALL / (V_ALL + V_AML), không phải xác suất hiệu chỉnh; ghi rõ trong docstring.
-- **Hệ quả:** kết quả sơ bộ trên 34 mẫu test (50 gen): 32 dự đoán chắc chắn, 31 đúng, PS trung vị 0,73; bài báo 29/29.
-  Nguyên nhân chênh (tiền xử lý, D2) xem xét ở tuần 2 khi lập bảng so sánh; nếu đổi lựa chọn nào thì cập nhật ADR này.
+- **Hệ quả:** LOOCV 38 mẫu: 36 dự đoán chắc chắn, 36 đúng, khớp bài báo. Tập test 34 mẫu: 33 chắc chắn, 32 đúng,
+  PS trung vị 0,73; bài báo 29/29 (`notebooks/05_golub_reproduction.ipynb`). Bản 15/11 ghi "32 chắc chắn, 31 đúng" là
+  cộng nhầm từ bảng nhầm lẫn; số đúng là 33/32. Dự đoán sai duy nhất là mẫu 66 (PS = 0,30004). Chưa đổi lựa chọn nào.
+- **Cập nhật 23/11 (tuần 2):** `patient_profile()` dùng mô hình 38 mẫu cho mẫu test và mẫu mới; với mẫu train dùng
+  mô hình bỏ chính mẫu đó (37 mẫu) để PS trùng LOOCV. Mẫu mới nhận ở thang gốc, đi qua `threshold_log10` như tầng
+  curated. Bệnh nhân tương tự: tương quan Pearson trên 50 gen bỏ phiếu đã z-score, chỉ so với 38 mẫu tham chiếu.
 
 ## ADR-050 — Quy ước của `src/features.py` (công việc 2.2, bản 1; đã thay thế bởi ADR-051)
 - **Ngày:** 01/11/2026 · **Người quyết định:** TV4
@@ -352,10 +356,11 @@ tái lập được và truy ngược về nguồn.
 | 28/10/2026 | 1.4: `src/viz.py` (F2, F2b, F3, F4a–c, F4e), `style_guide.md`, `notebooks/01_eda.ipynb`, `tests/test_viz.py`; F04d giữ nguyên của TV1 | ADR-011 | TV6 |
 | 01/11/2026 | 1.5: sửa bảng chéo lệch `sample_id`, SOM qua 10 seed, notebook tự sinh CSV + F05/F05b/F05c; H5 chỉ ủng hộ ở mức ALL/AML | ADR-012 | TV1 |
 | 04/11/2026 | 2.4: `mcnemar_test` ghép theo `sample_id`; F11 giữ cột "uncertain"; `nested_cv` có vòng trong chọn k, C; thêm bộ golden-file 19 testcase | ADR-013 | TV2 |
-| 09/11/2026 | Đổi hướng giai đoạn 2 sang quản trị dữ liệu và dashboard; dựng khung file, lệnh `make`, giữ trước số ADR | ADR-014 | TV1 (giảng viên duyệt) |
+| 09/11/2026 | Đổi hướng giai đoạn 2 sang quản trị dữ liệu và dashboard; dựng khung file, lệnh `make`, giữ trước số ADR | ADR-014 | TV1 |
 | 01/11/2026 | 2.2: `src/features.py` bản 1 — 6 bộ chọn gen + `make_selector`, luôn đúng k gen, snr/ttest cân bằng hai phía | ADR-050 | TV4 |
 | 12/11/2026 | 2.2 đổi sang Khám phá gen theo kế hoạch mới: `src/gene_explorer.py`, thay thế ADR-050; schema `gene_annotations.csv` cho TV5 | ADR-051 | TV4 |
 | 12/11/2026 | 2.4: `src/ingest.py` theo giao diện ADR-014 — 4 lô theo nguồn, chặn lô lỗi, nhật ký, `validate_new_sample(path)`; tách `quality.sample_qc()` dùng chung | ADR-030 | TV2 |
 | 15/11/2026 | 2.1: Golub weighted voting chuẩn hóa z-score theo train, SD chia n − 1, n lẻ báo lỗi, PS < 0,3 là uncertain | ADR-020 | TV1 |
+| 23/11/2026 | 2.1 tuần 2: `loocv()` (36/36 khớp bài báo), test 33 chắc chắn / 32 đúng (sửa số cộng nhầm 32/31), `patient_profile()` | ADR-020 | TV1 |
 | 17/11/2026 | 2.2 bản 2: độ tin cậy (P/A theo lớp), độ vững, lô mới (`marker_consistency`, `batch_anomalies`), đọc kho DuckDB, `src/viz_gene.py`; St-Jude 41 giữ chiều, 0 đảo chiều | ADR-052 | TV4 |
 | 18/11/2026 | 2.2: `marker_consistency` thêm kiểm định hoán vị trong lô (St-Jude p = 2/56 ≈ 0,036) và cột `batch_diff_sd` | ADR-052 | TV4 |
