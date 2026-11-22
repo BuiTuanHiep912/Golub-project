@@ -20,7 +20,7 @@ Bảng Okabe–Ito, an toàn với người mù màu.
 | Nguồn mẫu | CALGB | `#CC79A7` | — | |
 | Nguồn mẫu | CCG | `#56B4E9` | — | |
 | Nguồn mẫu | St-Jude | `#D55E00` | — | |
-| Loại mô | BM / PB | `#7F7F7F` / `#D55E00` | — | |
+| Loại mô | BM / PB | `#BDBDBD` / `#000000` | — | PB là nhóm cần chú ý; không dùng `#D55E00` (đã là St-Jude), ADR-070 |
 | Trung tính | cột, đường tham chiếu | `#4D4D4D` đậm, `#BDBDBD` nhạt | — | không mang nghĩa lớp |
 
 - **Mã hóa dư thừa:** màu luôn đi kèm hình dạng (điểm) hoặc kiểu gạch (hộp, cột) để in đen trắng vẫn đọc được. Hộp/cột: ALL trơn, AML gạch chéo `////`.
@@ -67,11 +67,11 @@ Bảng Okabe–Ito, an toàn với người mù màu.
 
 | Mã | Nội dung | Người vẽ | Nơi vẽ |
 |---|---|---|---|
-| F01 | Thiết kế mẫu | TV1 | `notebooks/02_design_batch.ipynb` |
+| F01 | Thiết kế mẫu | TV1, vẽ lại TV6 (2.6) | `src/viz.py` (`plot_sample_design`) |
 | F02, F02b | Histogram trước/sau log10; độ biến thiên gen và lọc | TV6 | `src/viz.py` |
 | F03 | Boxplot từng mẫu | TV6 | `src/viz.py` |
 | F04a, F04b, F04c | Scree; PCA theo lớp và nhóm con; PCA/t-SNE/UMAP | TV6 | `src/viz.py` |
-| F04d | PCA tô theo nguồn và loại mô (batch effect) | TV1 | `notebooks/02_design_batch.ipynb` |
+| F04d | PCA tô theo nguồn và loại mô (batch effect) | TV1, vẽ lại TV6 (2.6) | `src/viz.py` (`plot_pca_batch`) |
 | F04e | Tương quan giữa các mẫu + phân cụm phân cấp | TV6 | `src/viz.py` |
 | F05–F09, F12 | chưa có | | chờ giai đoạn 2 |
 | F10, F11 | Selection bias; ROC + ma trận nhầm lẫn | TV2 | `src/evaluate.py` |
@@ -104,4 +104,4 @@ save_figure(fig, "F04x_ten_ngan", "report")                              # -> re
 ## 7. Việc còn lại / không nhất quán cần xử lý ở công việc 2.6
 
 - `F10`, `F11` (TV2) đang dùng màu `#2b7bba`/`#c0392b`, chữ 9 pt (báo cáo) và 17 pt (slide): khác bảng ở mục 1–2. Sẽ chuyển sang `viz.py` (ADR-009).
-- `F01`, `F04d` (TV1) vẽ rộng 10–11 in với chữ 10 pt, nên khi chèn vào báo cáo chữ nhỏ hơn 10 pt. Cần vẽ lại bằng `figsize("report")`.
+- ~~`F01`, `F04d` (TV1) vẽ rộng 10–11 in~~: đã vẽ lại bằng `viz.py` ở 2.6 tuần 2 (22/11), rộng 6,5 in; F04d đổi màu loại mô để không trùng màu St-Jude (ADR-070).
