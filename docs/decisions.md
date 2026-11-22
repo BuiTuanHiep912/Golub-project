@@ -260,6 +260,21 @@ tái lập được và truy ngược về nguồn.
 - **Kiểm tra:** `tests/test_warehouse.py` dựng kho vào thư mục tạm, đối chiếu Bảng 2.4, khóa ngoại, khoảng giá trị
   và số giá trị âm (147 174).
 
+## ADR-070 — Vẽ lại F01, F04d bằng `src/viz.py`; đổi màu loại mô (công việc 2.6)
+- **Ngày:** 22/11/2026 · **Người đề xuất / quyết định:** TV6
+- **Bối cảnh:** F01, F04d (TV1, notebook 02) vẽ rộng 10–11 in nên chữ khi in nhỏ hơn 10 pt, màu ghi cứng
+  trong notebook (ADR-011). Trong F04d gốc, `#D55E00` vừa là St-Jude (panel trái) vừa là PB (panel phải),
+  vi phạm quy tắc "một màu một nghĩa trong một hình" của style guide.
+- **Quyết định:**
+  - Thêm `viz.design_counts`, `viz.plot_sample_design` (F01) và `viz.plot_pca_batch` (F04d) vào
+    `render_eda`; `make figures` vẽ cả hai, giữ nguyên tên file `F01_thiet_ke_mau_*`, `F04d_pca_batch_*`.
+  - F04d dùng chung tọa độ PCA với F04b (`compute_pca`, cùng z-score và seed như notebook 02: PC1 16,1 %,
+    PC2 11,4 %); chú giải màu là ô vuông, chú giải hình dạng (lớp) dùng chung ở trên; mẫu 21 khoanh tròn.
+  - `TISSUE_COLORS`: BM `#BDBDBD`, PB `#000000` (trước: `#7F7F7F` / `#D55E00`). Áp dụng cho cả dashboard.
+  - F01: hai panel cùng trục, cột từ 0, nhãn số trực tiếp, AML gạch `////` viền đen (in đen trắng vẫn đọc được).
+- **Hệ quả:** notebook 02 (TV1) vẫn còn hàm vẽ cũ; chạy lại notebook sẽ ghi đè hình bằng bản cũ. Theo
+  ADR-014 TV6 không sửa notebook của người khác: TV1 thay ô vẽ bằng lời gọi `viz` (xem `docs/handover/2.6.md`).
+
 ## Nhật ký nhanh (mục 5.2 kế hoạch)
 
 | Ngày | Quyết định | Lý do | Người quyết định |
@@ -279,3 +294,4 @@ tái lập được và truy ngược về nguồn.
 | 01/11/2026 | 2.2: `src/features.py` bản 1 — 6 bộ chọn gen + `make_selector`, luôn đúng k gen, snr/ttest cân bằng hai phía | ADR-050 | TV4 |
 | 12/11/2026 | 2.2 đổi sang Khám phá gen theo kế hoạch mới: `src/gene_explorer.py`, thay thế ADR-050; schema `gene_annotations.csv` cho TV5 | ADR-051 | TV4 |
 | 15/11/2026 | 2.1: Golub weighted voting chuẩn hóa z-score theo train, SD chia n − 1, n lẻ báo lỗi, PS < 0,3 là uncertain | ADR-020 | TV1 |
+| 22/11/2026 | 2.6: vẽ lại F01, F04d bằng `viz.py` (6,5 in, chữ ≥ 10 pt); loại mô BM xám nhạt, PB đen | ADR-070 | TV6 |
