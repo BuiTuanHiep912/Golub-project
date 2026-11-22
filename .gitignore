@@ -26,3 +26,6 @@ Thumbs.db
 
 # bộ test golden-file: actual/ sinh ra mỗi lần chạy
 tests/actual/
+
+# Báo cáo LaTeX: sửa và lưu trên Overleaf, không đưa lên Git
+docs/report/latex/
