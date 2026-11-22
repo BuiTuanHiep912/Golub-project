@@ -1,0 +1,5 @@
+tập,nguồn,n,chắc chắn,đúng,uncertain,PS trung vị
+LOOCV (38),bài báo,38,36,36,2,0.77
+LOOCV (38),nhóm,38,36,36,2,0.75
+Kiểm tra (34),bài báo,34,29,29,5,0.73
+Kiểm tra (34),nhóm,34,33,32,1,0.73
