@@ -1,0 +1,51 @@
+probe_id,gene_symbol,function,cell_lineage,source_url,verified
+M27891_at,CST3,Cystatin C - chất ức chế cysteine protease; liên quan đến thoái hóa protein ngoại bào; biểu hiện cao ở tế bào dòng tủy,myeloid,https://www.ncbi.nlm.nih.gov/gene/1471,yes
+X95735_at,ZYX,Zyxin - protein focal adhesion; tham gia tín hiệu bám dính tế bào và di chuyển tế bào; marker phân biệt AML,myeloid,https://www.ncbi.nlm.nih.gov/gene/7791,yes
+U50136_rna1_at,LTC4S,Leukotriene C4 synthase - xúc tác tổng hợp leukotriene C4 từ LTA4; liên quan đến viêm và đáp ứng miễn dịch bẩm sinh,myeloid,https://www.ncbi.nlm.nih.gov/gene/4056,yes
+M23197_at,CD33,CD33/Siglec-3 - thụ thể bề mặt đặc trưng tế bào dòng tủy; mục tiêu điều trị AML (gemtuzumab ozogamicin),myeloid,https://www.ncbi.nlm.nih.gov/gene/945,yes
+M84526_at,CFD,Complement factor D (adipsin) - serine protease trong con đường bổ thể thay thế; biểu hiện cao ở monocyte/đại thực bào,myeloid,https://www.ncbi.nlm.nih.gov/gene/1675,yes
+U22376_cds2_s_at,MYB,C-MYB proto-oncogene - yếu tố phiên mã điều hòa tăng sinh và biệt hóa tế bào máu; biểu hiện cao ở tế bào lympho chưa trưởng thành,lymphoid,https://www.ncbi.nlm.nih.gov/gene/4602,yes
+D88422_at,CSTA,Cystatin A (Stefin A) - chất ức chế cathepsin nội bào; bảo vệ tế bào khỏi phân giải protein bất thường,myeloid,https://www.ncbi.nlm.nih.gov/gene/1475,yes
+M27783_s_at,ELANE,Elastase neutrophil-expressed - serine protease trong hạt azurophil bạch cầu trung tính; marker biệt hóa dòng tủy,myeloid,https://www.ncbi.nlm.nih.gov/gene/1991,yes
+Y12670_at,LEPR,Leptin receptor - thụ thể leptin trên bề mặt tế bào; điều hòa chuyển hóa năng lượng và tạo máu,myeloid,https://www.ncbi.nlm.nih.gov/gene/3953,yes
+M55150_at,FAH,Fumarylacetoacetate hydrolase - enzyme cuối cùng trong con đường thoái hóa tyrosine,myeloid,https://www.ncbi.nlm.nih.gov/gene/2184,yes
+M31523_at,TCF3,Transcription factor 3 (E2A) - yếu tố phiên mã helix-loop-helix; thiết yếu cho phát triển tế bào B; gen dung hợp phổ biến trong ALL,lymphoid,https://www.ncbi.nlm.nih.gov/gene/6929,yes
+M16038_at,LYN,Tyrosine kinase LYN - kinase họ Src; tham gia tín hiệu thụ thể tế bào B/tủy; điều hòa tăng sinh và apoptosis,myeloid,https://www.ncbi.nlm.nih.gov/gene/4067,yes
+X74262_at,RBBP4,Retinoblastoma binding protein p48 - thành phần phức hợp tái tạo chromatin; điều hòa chu kỳ tế bào qua tương tác với RB1,lymphoid,https://www.ncbi.nlm.nih.gov/gene/5928,yes
+Y00787_s_at,CXCL8,Interleukin-8 (IL-8) - chemokine CXC; hóa hướng động bạch cầu trung tính; biểu hiện trong viêm và đáp ứng miễn dịch bẩm sinh,myeloid,https://www.ncbi.nlm.nih.gov/gene/3576,yes
+U12471_cds1_at,THBS1,Thrombospondin-1 - glycoprotein ngoại bào; ức chế tân sinh mạch; điều hòa bám dính tế bào,myeloid,https://www.ncbi.nlm.nih.gov/gene/7057,yes
+M28130_rna1_s_at,CXCL8,Interleukin-8 (IL-8) - chemokine CXC thu hút bạch cầu trung tính; vai trò trong viêm và tạo vi môi trường khối u,myeloid,https://www.ncbi.nlm.nih.gov/gene/3576,yes
+U46499_at,MGST1,Glutathione S-transferase microsomal - bảo vệ tế bào khỏi stress oxy hóa và lipid peroxidation,myeloid,https://www.ncbi.nlm.nih.gov/gene/4257,yes
+X70297_at,CHRNA7,Cholinergic receptor nicotinic alpha 7 - thụ thể nicotinic acetylcholine; điều hòa viêm qua con đường cholinergic kháng viêm,myeloid,https://www.ncbi.nlm.nih.gov/gene/1139,yes
+M89957_at,CD79B,Immunoglobulin-associated beta (Igβ/B29) - thành phần phức hợp thụ thể tế bào B (BCR); thiết yếu cho tín hiệu tế bào B,lymphoid,https://www.ncbi.nlm.nih.gov/gene/974,yes
+X15949_at,IRF2,Interferon regulatory factor 2 - yếu tố phiên mã; cạnh tranh với IRF1; điều hòa phiên mã gen đáp ứng interferon,lymphoid,https://www.ncbi.nlm.nih.gov/gene/3660,yes
+L47738_at,,Inducible protein - protein cảm ứng chưa đặc trưng rõ chức năng,,https://www.ncbi.nlm.nih.gov/nuccore/L47738,no
+U82759_at,HOXA9,Homeobox protein A9 - yếu tố phiên mã homeobox; điều hòa biệt hóa tế bào máu; dung hợp NUP98-HOXA9 phổ biến trong AML,myeloid,https://www.ncbi.nlm.nih.gov/gene/3205,yes
+L09209_s_at,APLP2,Amyloid precursor-like protein 2 - protein xuyên màng họ APP; vai trò trong bám dính tế bào và synaptogenesis,myeloid,https://www.ncbi.nlm.nih.gov/gene/334,yes
+X82240_rna1_at,TCL1A,T-cell leukemia/lymphoma protein 1A - đồng hoạt hóa AKT; thúc đẩy sống sót tế bào; liên quan đến T-cell prolymphocytic leukemia,lymphoid,https://www.ncbi.nlm.nih.gov/gene/8115,yes
+M31211_s_at,MYL1,Myosin light chain 1 - chuỗi nhẹ myosin cơ xương; vai trò trong co cơ,lymphoid,https://www.ncbi.nlm.nih.gov/gene/4632,yes
+M31166_at,PTX3,Pentraxin 3 - protein pha cấp; sản xuất bởi đại thực bào và tế bào nội mô khi kích thích IL-1β/TNFα; đáp ứng miễn dịch bẩm sinh,myeloid,https://www.ncbi.nlm.nih.gov/gene/5806,yes
+J05243_at,SPTAN1,Spectrin alpha non-erythrocytic 1 (alpha-fodrin) - protein khung xương tế bào; duy trì hình dạng và tính toàn vẹn màng tế bào,lymphoid,https://www.ncbi.nlm.nih.gov/gene/6709,yes
+X07743_at,PLEK,Pleckstrin - cơ chất chính của protein kinase C trong tiểu cầu; liên quan đến hoạt hóa tiểu cầu và bạch cầu trung tính,myeloid,https://www.ncbi.nlm.nih.gov/gene/5341,yes
+X85116_rna1_s_at,EPB72,Erythrocyte membrane protein band 7.2 (Stomatin) - protein màng; điều hòa kênh ion trên màng hồng cầu,myeloid,https://www.ncbi.nlm.nih.gov/gene/2015,yes
+M28170_at,CD19,CD19 antigen - thụ thể bề mặt đặc trưng tế bào B; đồng thụ thể của BCR; mục tiêu CAR-T trong điều trị B-ALL,lymphoid,https://www.ncbi.nlm.nih.gov/gene/930,yes
+M63138_at,CTSD,Cathepsin D - aspartyl protease lysosome; tham gia phân giải protein nội bào và trình diện kháng nguyên,myeloid,https://www.ncbi.nlm.nih.gov/gene/1509,yes
+L41870_at,RB1,Retinoblastoma protein 1 - protein ức chế khối u; kiểm soát chu kỳ tế bào G1/S; mất RB1 liên quan đến nhiều loại ung thư,lymphoid,https://www.ncbi.nlm.nih.gov/gene/5925,yes
+X62654_rna1_at,CD63,CD63/ME491 - tetraspanin; marker lysosome/hạt bào; liên quan đến bám dính và di chuyển tế bào,myeloid,https://www.ncbi.nlm.nih.gov/gene/967,yes
+Z15115_at,TOP2B,DNA topoisomerase II beta - enzyme tháo xoắn DNA; mục tiêu của thuốc hóa trị etoposide/doxorubicin,lymphoid,https://www.ncbi.nlm.nih.gov/gene/7155,yes
+M96326_rna1_at,AZU1,Azurocidin 1 (CAP37) - protein kháng khuẩn trong hạt azurophil bạch cầu trung tính; hoạt tính kháng vi sinh vật,myeloid,https://www.ncbi.nlm.nih.gov/gene/566,yes
+M94633_at,RAG2,Recombination activating gene 2 - enzyme tái tổ hợp V(D)J; thiết yếu cho đa dạng hóa thụ thể kháng nguyên tế bào T và B,lymphoid,https://www.ncbi.nlm.nih.gov/gene/5897,yes
+D14874_at,ADM,Adrenomedullin - peptide giãn mạch; sản xuất bởi tế bào tủy thượng thận và monocyte; chống apoptosis,myeloid,https://www.ncbi.nlm.nih.gov/gene/133,yes
+X04085_rna1_at,CAT,Catalase - enzyme phân giải H2O2 thành nước và oxy; bảo vệ tế bào khỏi stress oxy hóa,myeloid,https://www.ncbi.nlm.nih.gov/gene/847,yes
+M98399_s_at,CD36,CD36 antigen - thụ thể scavenger; nhận diện oxLDL và thrombospondin; biểu hiện trên monocyte và tiểu cầu,myeloid,https://www.ncbi.nlm.nih.gov/gene/948,yes
+M83652_s_at,CFP,Properdin (complement factor P) - ổn định C3 convertase con đường bổ thể thay thế; biểu hiện ở bạch cầu trung tính,myeloid,https://www.ncbi.nlm.nih.gov/gene/5199,yes
+M91432_at,ACADM,Acyl-CoA dehydrogenase medium chain - enzyme beta-oxy hóa acid béo chuỗi trung bình trong ty thể,lymphoid,https://www.ncbi.nlm.nih.gov/gene/34,yes
+X17042_at,PRG1,Proteoglycan 1 (Serglycin) - proteoglycan trong hạt bài tiết; lưu trữ protease và histamine trong hạt tế bào mast/bạch cầu,myeloid,https://www.ncbi.nlm.nih.gov/gene/5552,yes
+M54995_at,PPBP,Pro-platelet basic protein (CXCL7) - chemokine giải phóng từ tiểu cầu; thúc đẩy tạo máu và hóa hướng động bạch cầu trung tính,myeloid,https://www.ncbi.nlm.nih.gov/gene/5473,yes
+U05259_rna1_at,CD79A,MB-1/Igα - thành phần phức hợp thụ thể tế bào B (BCR); truyền tín hiệu từ BCR; marker dòng tế bào B,lymphoid,https://www.ncbi.nlm.nih.gov/gene/973,yes
+L33930_s_at,CD24,CD24 signal transducer - GPI-anchored glycoprotein bề mặt; marker biệt hóa tế bào B; điều hòa tăng sinh tế bào B,lymphoid,https://www.ncbi.nlm.nih.gov/gene/100133941,yes
+M83233_at,TCF12,Transcription factor 12 (HTF4/HEB) - yếu tố phiên mã bHLH; điều hòa phát triển tế bào T và B cùng với E2A,lymphoid,https://www.ncbi.nlm.nih.gov/gene/6938,yes
+L08246_at,MCL1,Myeloid cell leukemia 1 - protein chống apoptosis họ BCL-2; thiết yếu cho sống sót tế bào tạo máu; mục tiêu điều trị AML,myeloid,https://www.ncbi.nlm.nih.gov/gene/4170,yes
+M77142_at,TIA1,TIA1 cytotoxic granule associated RNA binding protein - điều hòa splicing mRNA; thành phần hạt stress; vai trò trong apoptosis,lymphoid,https://www.ncbi.nlm.nih.gov/gene/7072,yes
+M19045_f_at,LYZ,Lysozyme - enzyme kháng khuẩn thủy phân peptidoglycan; biểu hiện cao ở monocyte và bạch cầu trung tính; marker dòng tủy,myeloid,https://www.ncbi.nlm.nih.gov/gene/4069,yes
+M20203_s_at,ELANE,Neutrophil elastase - serine protease phân giải elastin; lưu trữ trong hạt azurophil; đột biến ELANE gây neutropenia bẩm sinh,myeloid,https://www.ncbi.nlm.nih.gov/gene/1991,yes
