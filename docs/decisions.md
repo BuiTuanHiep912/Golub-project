@@ -241,6 +241,56 @@ tái lập được và truy ngược về nguồn.
   Lần gọi đầu 0,2–0,7 s, các lần sau < 0,02 s (trước khi có bộ nhớ đệm: 0,5–1 s mỗi lần).
 - **Kiểm tra:** `tests/test_gene_explorer.py` (30 test, dữ liệu tổng hợp cùng cỡ nhóm Golub + 1 test trên dữ liệu thật).
 
+## ADR-052 — Khám phá gen bản 2: độ tin cậy, độ vững, lô mới, đọc kho DuckDB, `src/viz_gene.py`
+- **Ngày:** 17/11/2026 · **Người quyết định:** TV4 (công việc 2.2, tuần 2)
+- **Bối cảnh:** màn hình Khám phá gen mới trả lời "gen này biểu hiện thế nào", chưa trả lời được câu chính của nhà
+  nghiên cứu: số đo có tin được không, khác biệt có vững không, và khi có lô mẫu mới thì có gì bất thường.
+- **Hàm mới trong `src/gene_explorer.py`** (không đổi tên hàm đã khóa):
+  - `gene_reliability(probe_id)`: theo **từng lớp**, tỉ lệ call P/M/A của chip (`standardized/calls.parquet`) và tỉ lệ
+    mẫu ở mức sàn (log10 = 2). Phải tính theo lớp vì gen dấu ấn tốt thường tắt ở một lớp: CD33 có P ở 19% ALL, 92% AML;
+    tính chung 72 mẫu sẽ trông như tín hiệu yếu. Kiểu: `on_off`, `level`, `weak` (lớp "có mặt" khi ≥ 50% call P).
+  - `robustness(probe_id)`: chênh lệch ALL − AML qua 7 phép so sánh (huấn luyện làm mốc, 72 mẫu, bỏ mẫu gắn cờ QC,
+    B-ALL, T-ALL, chỉ tủy xương, trong St-Jude) kèm `fold_change` = 10^diff và cờ cùng chiều. Chỉ mô tả.
+  - `marker_consistency(source | sample_ids)`: lô **có** nhãn. Gen dấu ấn = 25 + 25 gen hạng cao nhất mỗi phía (như
+    Golub; top 50 theo hạng chung cho 44/50 thay vì 46/50). `only_test=True` mặc định để không so tập huấn luyện với chính nó.
+  - `batch_anomalies(source | sample_ids)`: lô **chưa** nhãn. Mẫu có gen dấu ấn ngoài [min, max] của 38 mẫu huấn
+    luyện; mức lệch tính theo độ lệch chuẩn của gen. Không dùng nhãn của lô (có test khóa điều này).
+  - `ranking_table(top_n=None)` lấy toàn bộ gen; `gene_values` trả thêm `qc_outlier`.
+- **Ngưỡng chênh lệch tối thiểu `MIN_DIFF_LOG10 = 0,1`** (≈ 1,26 lần): chênh lệch trong lô nhỏ hơn mức này xếp
+  "Chênh lệch nhỏ", không tính là giữ hay đảo chiều. Lý do: 4 gen "đảo chiều" theo dấu ở St-Jude đều sát mức sàn,
+  chênh 0,00–0,05 (TCF12 bằng đúng 0); ngược lại có gen "giữ chiều" chỉ chênh 0,002. Kết quả St-Jude: 46/50 cùng dấu
+  (khớp 1.6); với ngưỡng: **41 giữ chiều, 0 đảo chiều, 9 quá nhỏ**. Không gen dấu ấn nào đảo chiều rõ trong cùng một
+  phòng lab, ủng hộ khác biệt do bệnh; giới hạn: St-Jude chỉ có 3 ALL, 5 AML.
+- **Đọc kho DuckDB của TV3** (`fact_expression.value_log10`, `dim_sample`) khi `data/warehouse/golub.duckdb` tồn tại,
+  không thì đọc `load_golub("curated")`; `data_source()` cho biết đang dùng nguồn nào, `USE_WAREHOUSE = False` để ép
+  đọc Parquet. Đã kiểm tra: X và bảng mẫu đọc từ kho **giống hệt** tầng curated (test dựng kho vào thư mục tạm).
+  `WAREHOUSE_PATH` khai lại trong module (không import `src.warehouse` để module không bắt buộc cài duckdb) và có test
+  kiểm tra trùng với hằng số của TV3.
+- **`src/viz_gene.py`** (file riêng theo ADR-014, dùng màu/hình điểm/cỡ chữ của `src/viz.py`): volcano, biểu hiện một
+  gen (chấm đặc huấn luyện, chấm rỗng kiểm tra, vòng đen mẫu gắn cờ, ghi n, tô nền ô đủ hai lớp), nhất quán của lô,
+  thanh SNR hai phía. Mỗi hình có bản Altair (`*_chart`, cho dashboard) và bản matplotlib (`plot_*`, mode
+  report/slide). `python -m src.viz_gene` ghi `gene_volcano`, `gene_expression_CD33`, `gene_consistency_StJude`
+  vào `results/figures/{report,slides}/`. Chưa thêm vào `Makefile`/`run_all.py` (file chung, cần báo nhóm).
+- **Ranh giới, không chồng việc:** kiểm tra định dạng và chất lượng chip của lô mới là của TV2 (2.4); vị trí một bệnh
+  nhân trên PCA và gen bỏ phiếu là của TV1 (2.1); đặt hình lên trang là của TV6 (2.6). TV4 chỉ cung cấp hàm.
+- **Kiểm tra:** `tests/test_gene_explorer.py` 45 test (thêm dữ liệu giả có T-ALL, mẫu gắn cờ, call P/A, mẫu CCG bất
+  thường; khóa 46/50 và 0 đảo chiều trên dữ liệu thật), `tests/test_viz_gene.py` 14 test. Toàn bộ repo 178 test đạt.
+- **Bổ sung 18/11 (độ bất định cho `marker_consistency`):**
+  - *Vì sao vẫn dùng hiệu trung bình, không dùng SNR trong lô:* hàm chỉ xét chiều, mà dấu SNR luôn trùng dấu hiệu trung
+    bình (mẫu số dương). σ tính từ 3–5 mẫu của lô không ổn định và gần 0 ở mức sàn, làm SNR bị thổi phồng đúng ở các gen
+    cần loại. Hiệu log10 có đơn vị dễ đọc (0,1 ≈ 1,26 lần).
+  - *Thêm kiểm định hoán vị trong lô* (`attrs["p_perm"]`, `attrs["n_perm"]`): xáo nhãn các mẫu của lô (giữ số ALL/AML),
+    đếm lại số gen cùng dấu với tập huấn luyện; p = tỉ lệ cách xếp cho số gen ≥ nhãn thật. Kiểm định cho **cả bộ** gen,
+    không từng gen (3 mẫu thì kiểm định từng gen gần như vô nghĩa), và giữ tương quan giữa các gen. Lô ít mẫu thì duyệt đủ
+    (≤ 5000 cách), lô lớn thì xáo 2000 lần với seed cố định. **St-Jude: duyệt đủ C(8,3) = 56 cách, p = 2/56 ≈ 0,036**
+    (nhỏ nhất có thể là 1/56 ≈ 0,018); toàn bộ 34 mẫu kiểm tra: 50/50 cùng dấu, p ≈ 0,002. Với 8 mẫu, p không thể nhỏ
+    hơn 0,018, nên kết quả St-Jude chỉ ở mức ủng hộ vừa phải.
+  - *Thêm cột `batch_diff_sd`* = `batch_diff` / độ lệch chuẩn gộp trong lớp của gen trên 38 mẫu huấn luyện, để so mức chênh
+    giữa các gen theo cùng đơn vị. σ lấy từ tập huấn luyện vì ổn định hơn σ của lô. `status` vẫn theo `MIN_DIFF_LOG10`
+    để không đổi số liệu đã báo cáo; 9 gen "Chênh lệch nhỏ" ở St-Jude đều có |batch_diff_sd| ≤ 0,58.
+  - Thêm 3 test (liệt kê cách xếp, kiểm định trên dữ liệu có tín hiệu và ngược chiều, cột chuẩn hóa) và khóa p = 2/56 trên
+    dữ liệu thật. Toàn bộ repo 181 test đạt.
+
 ## ADR-040 — Lược đồ kho DuckDB `golub.duckdb` (công việc 2.3, bản 1)
 - **Ngày:** 15/11/2026 · **Người quyết định:** TV3 (theo ADR-014 và *Kế hoạch giai đoạn 2 (hướng mới)*)
 - **Bối cảnh:** TV1, TV2, TV4, TV6 cần một nơi truy vấn chung thay vì tự đọc Parquet; lược đồ hình sao ở
@@ -279,3 +329,5 @@ tái lập được và truy ngược về nguồn.
 | 01/11/2026 | 2.2: `src/features.py` bản 1 — 6 bộ chọn gen + `make_selector`, luôn đúng k gen, snr/ttest cân bằng hai phía | ADR-050 | TV4 |
 | 12/11/2026 | 2.2 đổi sang Khám phá gen theo kế hoạch mới: `src/gene_explorer.py`, thay thế ADR-050; schema `gene_annotations.csv` cho TV5 | ADR-051 | TV4 |
 | 15/11/2026 | 2.1: Golub weighted voting chuẩn hóa z-score theo train, SD chia n − 1, n lẻ báo lỗi, PS < 0,3 là uncertain | ADR-020 | TV1 |
+| 17/11/2026 | 2.2 bản 2: độ tin cậy (P/A theo lớp), độ vững, lô mới (`marker_consistency`, `batch_anomalies`), đọc kho DuckDB, `src/viz_gene.py`; St-Jude 41 giữ chiều, 0 đảo chiều | ADR-052 | TV4 |
+| 18/11/2026 | 2.2: `marker_consistency` thêm kiểm định hoán vị trong lô (St-Jude p = 2/56 ≈ 0,036) và cột `batch_diff_sd` | ADR-052 | TV4 |
