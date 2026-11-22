@@ -85,8 +85,8 @@ def test_render_eda_writes_named_files(data, tmp_path, mode):
     sub = "report" if mode == "report" else "slides"
     names = sorted(p.name for p in paths)
     assert names == sorted(f"{stem}_{mode}.png" for stem in (
-        "F02_hist_before_after_log", "F02b_gene_variance", "F03_box_per_sample", "F04a_pca_scree",
-        "F04b_pca_by_class", "F04c_tsne_umap", "F04e_sample_correlation"))
+        "F01_thiet_ke_mau", "F02_hist_before_after_log", "F02b_gene_variance", "F03_box_per_sample",
+        "F04a_pca_scree", "F04b_pca_by_class", "F04c_tsne_umap", "F04d_pca_batch", "F04e_sample_correlation"))
     assert all(p.parent == tmp_path / sub and p.stat().st_size > 5_000 for p in paths)
     plt.close("all")
 
@@ -122,3 +122,36 @@ def test_eda_summary_reports_measurement_range(data):
     raw, Xl, Xf, samples = data
     mr = viz.eda_summary(raw, Xl, Xf, samples)["measurement_range"]
     assert 0 <= mr["frac_negative"] <= mr["frac_below_100"] <= 1 and 0 <= mr["frac_above_16000"] <= 1
+
+
+def test_design_counts_keeps_empty_groups_and_sums(data):
+    _, _, _, samples = data
+    c = viz.design_counts(samples)
+    n_groups = len(samples[["source", "tissue"]].drop_duplicates())
+    assert (c["split"] == "train").sum() == (c["split"] == "test").sum() == n_groups   # cùng hàng ở 2 panel
+    assert int(c[["ALL", "AML"]].to_numpy().sum()) == len(samples)
+    for split in ("train", "test"):
+        sub = c[c["split"] == split]
+        assert int(sub[["ALL", "AML"]].to_numpy().sum()) == int((samples["split"] == split).sum())
+
+
+@pytest.mark.parametrize("mode", ["report", "slide"])
+def test_sample_design_and_pca_batch_follow_style(data, mode):
+    _, _, Xf, samples = data
+    w = viz.FIG_STYLES[mode]["width"]
+    fig = viz.plot_sample_design(samples, mode=mode)
+    assert fig.get_size_inches()[0] == pytest.approx(w)            # vẽ đúng bề rộng in thật
+    assert all(ax.get_xlim()[0] == 0 for ax in fig.axes)           # cột bắt đầu từ 0
+    plt.close(fig)
+    scores, ratio = viz.compute_pca(Xf, 2)
+    fig = viz.plot_pca_batch(scores, ratio, samples, mode=mode)
+    assert fig.get_size_inches()[0] == pytest.approx(w)
+    left, right = fig.axes[:2]
+    assert {t.get_text() for t in left.get_legend().get_texts()} == {"DFCI", "CALGB", "St-Jude"}
+    assert {t.get_text() for t in right.get_legend().get_texts()} == {"BM", "PB"}
+    plt.close(fig)
+
+
+def test_one_color_one_meaning_in_pca_batch():
+    """F04d đặt nguồn và loại mô cạnh nhau: không màu nào được dùng cho cả hai."""
+    assert not set(viz.SOURCE_COLORS.values()) & set(viz.TISSUE_COLORS.values())
