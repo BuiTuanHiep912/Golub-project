@@ -260,6 +260,33 @@ tái lập được và truy ngược về nguồn.
 - **Kiểm tra:** `tests/test_warehouse.py` dựng kho vào thư mục tạm, đối chiếu Bảng 2.4, khóa ngoại, khoảng giá trị
   và số giá trị âm (147 174).
 
+## ADR-030 — Nhập theo lô và kiểm tra file mẫu mới (`src/ingest.py`, công việc 2.4)
+- **Ngày:** 12/11/2026 · **Người quyết định:** TV2
+- **Bối cảnh:** nhánh `2.4-ingest` (commit `7717555`) có `ingest_lots()` chia "lô" theo 4 file raw và
+  `validate_new_sample(sample: dict)` trả `{valid, errors, warnings, normalized}` — lệch giao diện khóa
+  ở ADR-014 (`ingest_batches()`, `validate_new_sample(path)` → `{ok, errors, warnings, values}`),
+  `tests/test_interfaces.py` báo `src.ingest thiếu ['ingest_batches']`. Viết lại trên nhánh `2.4-ingest-v2`.
+- **Quyết định:**
+  - Lô = mọi mẫu của một phòng lab (`source`): B1-DFCI, B2-CALGB, B3-St-Jude, B4-CCG, tách từ tầng
+    standardized. Nguồn lạ hoặc thiếu vẫn thành một lô riêng để bị chặn, không lặng lẽ bỏ qua.
+  - **Chặn lô** khi vi phạm ràng buộc cấu trúc/quan hệ: thiếu/thừa/trùng probe, ô trống, giá trị không
+    phải số, `sample_id` trống/trùng/đã thuộc lô khác, metadata bắt buộc thiếu hoặc ngoài danh mục, lô
+    nhiều nguồn, `class` lệch `subtype`, call ngoài P/A/M. Chặn một lô không ảnh hưởng lô khác.
+  - **Không chặn** theo chỉ số chất lượng (tương quan, tỷ lệ P, `qc_outlier`): chỉ báo cáo, cùng tinh
+    thần ADR-004. Quy tắc gắn cờ theo mẫu tách thành `src.quality.sample_qc()` dùng chung cho tầng
+    cleansed và ingest (quality_report.md và cờ của cleansed không đổi, đã đối chiếu).
+  - Lô thêm từ file CSV (`ingest_batches(extra_files=...)`) để demo lô lỗi; chỉ số của lô thêm đo so
+    với các lô thật nên không làm đổi cờ của 72 mẫu thật.
+  - Đầu ra (`write=True`, `make ingest`) ở `data/cleansed/`: `batches.parquet` (→ `dim_batch`),
+    `qc_samples.parquet` (→ `fact_qc`), `ingest_log.csv` ghi thêm mỗi lần chạy. Mặc định
+    `ingest_batches()` không ghi file để dashboard gọi trực tiếp. Thêm `sample_quality()` (bảng theo mẫu).
+  - `validate_new_sample(path)`: CSV `probe_id,value`, đủ 7129 probe chuẩn, không trùng/trống/không số;
+    nhận cả đối tượng file (nút tải của Streamlit). Có > 90% giá trị < 100 thì báo lỗi "đã log hóa / sai
+    thang" (72 chip thật: 40–56%). Chip lệch 38 mẫu tham chiếu (modified z của tương quan trung vị,
+    trung vị, IQR; ngưỡng 3.5 như ADR-004) chỉ cảnh báo. Đã chạy cả 34 bệnh nhân tập test: đều `ok`,
+    không cảnh báo nhầm.
+- **Kiểm thử:** `tests/test_ingest.py` (20 test trên dữ liệu thật; báo lỗi, không skip khi thiếu dữ liệu).
+
 ## ADR-070 — Vẽ lại F01, F04d bằng `src/viz.py`; đổi màu loại mô (công việc 2.6)
 - **Ngày:** 22/11/2026 · **Người đề xuất / quyết định:** TV6
 - **Bối cảnh:** F01, F04d (TV1, notebook 02) vẽ rộng 10–11 in nên chữ khi in nhỏ hơn 10 pt, màu ghi cứng
@@ -293,5 +320,6 @@ tái lập được và truy ngược về nguồn.
 | 09/11/2026 | Đổi hướng giai đoạn 2 sang quản trị dữ liệu và dashboard; dựng khung file, lệnh `make`, giữ trước số ADR | ADR-014 | TV1 (giảng viên duyệt) |
 | 01/11/2026 | 2.2: `src/features.py` bản 1 — 6 bộ chọn gen + `make_selector`, luôn đúng k gen, snr/ttest cân bằng hai phía | ADR-050 | TV4 |
 | 12/11/2026 | 2.2 đổi sang Khám phá gen theo kế hoạch mới: `src/gene_explorer.py`, thay thế ADR-050; schema `gene_annotations.csv` cho TV5 | ADR-051 | TV4 |
+| 12/11/2026 | 2.4: `src/ingest.py` theo giao diện ADR-014 — 4 lô theo nguồn, chặn lô lỗi, nhật ký, `validate_new_sample(path)`; tách `quality.sample_qc()` dùng chung | ADR-030 | TV2 |
 | 15/11/2026 | 2.1: Golub weighted voting chuẩn hóa z-score theo train, SD chia n − 1, n lẻ báo lỗi, PS < 0,3 là uncertain | ADR-020 | TV1 |
 | 22/11/2026 | 2.6: vẽ lại F01, F04d bằng `viz.py` (6,5 in, chữ ≥ 10 pt); loại mô BM xám nhạt, PB đen | ADR-070 | TV6 |

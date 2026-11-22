@@ -73,6 +73,54 @@ def modified_z(values: np.ndarray) -> np.ndarray:
     return 0.6745 * (values - med) / mad
 
 
+def sample_correlation(X: pd.DataFrame) -> pd.DataFrame:
+    """Tương quan Pearson giữa các mẫu, đường chéo NaN (bỏ tương quan của mẫu với chính nó).
+
+    Đo trên log10 sau threshold [100, 16000] chỉ để so sánh các mẫu với nhau; giá trị ghi ra
+    các tầng vẫn là giá trị gốc (phép biến đổi thật nằm ở tầng curated, TV3).
+    """
+    logged = np.log10(np.clip(X.to_numpy(dtype=float), EXPR_LO, EXPR_HI))
+    corr = np.corrcoef(logged)
+    np.fill_diagonal(corr, np.nan)
+    return pd.DataFrame(corr, index=X.index, columns=X.index)
+
+
+def _outlier_reasons(X: pd.DataFrame, corr: pd.DataFrame) -> tuple[pd.DataFrame, dict[int, list[str]]]:
+    """Chỉ số theo mẫu của mức Record và lý do gắn cờ (chưa gồm trùng lặp, xem check_record)."""
+    logged = np.log10(np.clip(X.to_numpy(dtype=float), EXPR_LO, EXPR_HI))
+    ids = X.index.to_numpy()
+    q25, med, q75 = np.percentile(logged, [25, 50, 75], axis=1)
+    med_corr = np.nanmedian(corr.to_numpy(), axis=1)
+    metrics = pd.DataFrame({"median_log10": med, "iqr_log10": q75 - q25, "median_corr": med_corr},
+                           index=X.index)
+    reasons: dict[int, list[str]] = {}
+    # Chip lỗi tương quan kém với mọi mẫu còn lại -> chỉ xét phía thấp.
+    z_corr = modified_z(med_corr)
+    for i in np.where(z_corr < -MODZ_THRESHOLD)[0]:
+        reasons.setdefault(int(ids[i]), []).append(
+            f"tương quan trung vị với các mẫu khác thấp (r = {med_corr[i]:.3f}, z = {z_corr[i]:.1f})")
+    # Boxplot theo mẫu: trung vị và IQR lệch hẳn so với phần còn lại (cả hai phía).
+    for name, stat in (("trung vị", med), ("IQR", q75 - q25)):
+        z = modified_z(stat)
+        for i in np.where(np.abs(z) > MODZ_THRESHOLD)[0]:
+            reasons.setdefault(int(ids[i]), []).append(f"{name} log10 bất thường ({stat[i]:.3f}, z = {z[i]:.1f})")
+    return metrics, reasons
+
+
+def sample_qc(X: pd.DataFrame) -> pd.DataFrame:
+    """Chỉ số chất lượng theo mẫu và cờ qc_outlier — nguồn duy nhất của quy tắc gắn cờ.
+
+    Dùng cho tầng cleansed (check_record) và chất lượng theo lô (src/ingest.py, TV2 2.4), để cờ
+    của hai nơi luôn trùng nhau. Cột: median_log10, iqr_log10, median_corr, qc_outlier (bool),
+    qc_reason (chuỗi rỗng khi không bị gắn cờ). Phát hiện cặp trùng lặp (r > DUP_CORR) chỉ có ở
+    check_record vì cần cả cặp mẫu.
+    """
+    metrics, reasons = _outlier_reasons(X, sample_correlation(X))
+    metrics["qc_outlier"] = metrics.index.isin(list(reasons))
+    metrics["qc_reason"] = [", ".join(reasons.get(int(sid), [])) for sid in metrics.index]
+    return metrics
+
+
 # ---------------------------------------------------------------------------
 # Bốn mức kiểm tra (Bảng 2.9)
 # ---------------------------------------------------------------------------
@@ -122,37 +170,23 @@ def check_record(report: list[str], X: pd.DataFrame, samples: pd.DataFrame) -> d
     _line(report, X.index.is_unique and samples.index.is_unique, "không trùng sample_id")
     _line(report, X.columns.is_unique, "không trùng probe id")
 
-    # Đo trên log10 sau threshold [100, 16000] chỉ để so sánh các mẫu với nhau; giá trị
-    # ghi ra tầng cleansed vẫn là giá trị gốc (phép biến đổi thật nằm ở tầng curated).
-    logged = np.log10(np.clip(X.to_numpy(dtype=float), EXPR_LO, EXPR_HI))
+    corr_df = sample_correlation(X)
+    corr = corr_df.to_numpy()
     ids = X.index.to_numpy()
     reasons: dict[int, list[str]] = {}
 
-    def flag(i: int, why: str) -> None:
-        reasons.setdefault(int(ids[i]), []).append(why)
-
-    corr = np.corrcoef(logged)
-    np.fill_diagonal(corr, np.nan)  # bỏ tương quan của mẫu với chính nó
-
-    # Mẫu trùng lặp: hai chip gần như giống hệt nhau.
+    # Mẫu trùng lặp: hai chip gần như giống hệt nhau. Ghi trước để thứ tự lý do trong báo cáo
+    # giữ như cũ: trùng lặp -> tương quan thấp -> trung vị/IQR.
     dup_i, dup_j = np.where(np.triu(np.nan_to_num(corr) > DUP_CORR, k=1))
     for i, j in zip(dup_i, dup_j):
-        flag(i, f"trùng lặp với mẫu {ids[j]} (r = {corr[i, j]:.3f})")
-        flag(j, f"trùng lặp với mẫu {ids[i]} (r = {corr[i, j]:.3f})")
+        reasons.setdefault(int(ids[i]), []).append(f"trùng lặp với mẫu {ids[j]} (r = {corr[i, j]:.3f})")
+        reasons.setdefault(int(ids[j]), []).append(f"trùng lặp với mẫu {ids[i]} (r = {corr[i, j]:.3f})")
     _line(report, len(dup_i) == 0, f"không có cặp mẫu trùng lặp (tương quan > {DUP_CORR})")
 
-    # Tương quan giữa các mẫu: chip lỗi tương quan kém với mọi mẫu còn lại -> chỉ xét phía thấp.
-    med_corr = np.nanmedian(corr, axis=1)
-    z_corr = modified_z(med_corr)
-    for i in np.where(z_corr < -MODZ_THRESHOLD)[0]:
-        flag(i, f"tương quan trung vị với các mẫu khác thấp (r = {med_corr[i]:.3f}, z = {z_corr[i]:.1f})")
-
-    # Boxplot theo mẫu: trung vị và IQR của từng mẫu lệch hẳn so với phần còn lại (cả hai phía).
-    q25, med, q75 = np.percentile(logged, [25, 50, 75], axis=1)
-    for name, stat in (("trung vị", med), ("IQR", q75 - q25)):
-        z = modified_z(stat)
-        for i in np.where(np.abs(z) > MODZ_THRESHOLD)[0]:
-            flag(i, f"{name} log10 bất thường ({stat[i]:.3f}, z = {z[i]:.1f})")
+    metrics, outliers = _outlier_reasons(X, corr_df)
+    for sid, why in outliers.items():
+        reasons.setdefault(sid, []).extend(why)
+    med_corr = metrics["median_corr"].to_numpy()
 
     report.append(f"[INFO] Tương quan trung vị giữa các mẫu: thấp nhất {np.min(med_corr):.3f} "
                   f"(mẫu {ids[np.argmin(med_corr)]}), trung vị {np.median(med_corr):.3f}")
