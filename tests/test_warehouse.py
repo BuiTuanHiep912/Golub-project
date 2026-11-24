@@ -51,6 +51,38 @@ def test_dimensions_and_keys(con):
     assert one("SELECT count(DISTINCT (sample_id, probe_id)) FROM fact_expression") == 72 * 7129
 
 
+def test_batch_and_qc_tables(con):
+    one = lambda q: con.execute(q).fetchone()[0]  # noqa: E731
+    assert sorted(r[0] for r in con.execute("SELECT batch_id FROM dim_batch").fetchall()) == [
+        "B1-DFCI", "B2-CALGB", "B3-St-Jude", "B4-CCG"]
+    assert one("SELECT count(*) FROM dim_batch WHERE status <> 'passed'") == 0
+    assert one("SELECT count(*) FROM fact_qc") == 72
+    assert one("SELECT count(*) FROM fact_qc ANTI JOIN dim_sample USING (sample_id, batch_id)") == 0
+    # cờ qc_outlier của TV2 trùng cờ của tầng cleansed (chỉ mẫu 21)
+    assert con.execute("SELECT sample_id FROM fact_qc WHERE qc_outlier").fetchall() == [(21,)]
+    assert one("SELECT count(*) FROM dim_sample s JOIN fact_qc q USING (sample_id) "
+               "WHERE s.qc_outlier <> q.qc_outlier") == 0
+    sql = (PROJECT_ROOT / "sql" / "02_chat_luong_theo_lo.sql").read_text(encoding="utf-8")
+    assert [r[2] for r in con.execute(sql).fetchall()] == [44, 15, 8, 5]
+
+
+def test_blocked_batch_not_loaded(tmp_path):
+    """Lô bị chặn vẫn có trong dim_batch/fact_qc nhưng mẫu của nó không vào dim_sample, fact_expression."""
+    from src.ingest import ingest_batches, sample_quality
+    batches, qc = ingest_batches(), sample_quality()
+    batches.loc[batches["batch_id"] == "B4-CCG", ["status", "reason"]] = ["blocked", "lỗi giả lập"]
+    qc.loc[qc["batch_id"] == "B4-CCG", "batch_status"] = "blocked"
+    batches.to_parquet(tmp_path / "batches.parquet", index=False)
+    qc.to_parquet(tmp_path / "qc_samples.parquet", index=False)
+
+    path = tmp_path / "golub.duckdb"
+    counts = warehouse.build_warehouse(path, cleansed_dir=tmp_path)
+    assert counts["dim_sample"] == 67 and counts["fact_expression"] == 67 * 7129
+    assert counts["dim_batch"] == 4 and counts["fact_qc"] == 72
+    with duckdb.connect(str(path), read_only=True) as c:
+        assert c.execute("SELECT count(*) FROM dim_sample WHERE source = 'CCG'").fetchone()[0] == 0
+
+
 def test_values_match_layers(con):
     lo, hi, n_neg = con.execute(
         "SELECT min(value_log10), max(value_log10), count(*) FILTER (value_raw < 0) "

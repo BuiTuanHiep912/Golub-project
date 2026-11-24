@@ -313,6 +313,26 @@ tái lập được và truy ngược về nguồn.
 - **Truy vấn OLAP:** mỗi câu hỏi nghiệp vụ là một file `sql/NN_<chủ đề>.sql`, có chú thích câu hỏi ở đầu file.
 - **Kiểm tra:** `tests/test_warehouse.py` dựng kho vào thư mục tạm, đối chiếu Bảng 2.4, khóa ngoại, khoảng giá trị
   và số giá trị âm (147 174).
+- **Đã sửa bởi ADR-041:** `dim_batch`, `fact_qc` và `batch_id` theo `src/ingest.py` của TV2.
+
+## ADR-041 — Kho bản 2: `dim_batch`, `fact_qc` lấy từ `src/ingest.py`, chỉ nạp mẫu của lô đạt (công việc 2.3)
+- **Ngày:** 23/11/2026 · **Người quyết định:** TV3
+- **Bối cảnh:** TV2 cài đặt `src/ingest.py` (ADR-030) với `batch_id` dạng `B1-DFCI`, `B2-CALGB`, `B3-St-Jude`, `B4-CCG`,
+  và tách hai đầu ra: `batches.parquet` (một hàng mỗi lô) và `qc_samples.parquet` (một hàng mỗi mẫu). Quy ước
+  `batch_id` = tên nguồn và `fact_qc` theo lô của ADR-040 không còn khớp.
+- **Quyết định (thay phần tương ứng của ADR-040):**
+  - `dim_batch` = nguyên `batches.parquet` (có `status`, `reason`, `warnings`, chỉ số chất lượng theo lô); bỏ các cột
+    tự tính `n_all, n_aml, n_bm, n_pb` của bản 1. Khóa chính `batch_id` theo TV2.
+  - `fact_qc` = nguyên `qc_samples.parquet`: **một hàng mỗi mẫu**, nối với `dim_sample` qua `(sample_id, batch_id)`.
+  - `log_ingest` = `ingest_log.csv` (nhật ký mọi lần `make ingest`), có khi file tồn tại; dùng cho sơ đồ truy vết.
+  - `dim_sample.batch_id` lấy từ `fact_qc`, không tự suy từ `source`.
+  - **Chỉ mẫu thuộc lô `passed` mới vào `dim_sample` và `fact_expression`.** Lô bị chặn vẫn nằm trong `dim_batch`
+    và `fact_qc` để màn hình Chất lượng dữ liệu hiện lý do chặn.
+  - Đọc file của `make ingest`; nếu chưa chạy thì gọi `ingest_batches()`, `sample_quality()` tại chỗ (không ghi
+    file, không ghi nhật ký). Tên file lấy từ hằng `BATCHES_FILE`, `QC_FILE`, `LOG_FILE` của `src/ingest.py`.
+- **Thứ tự chạy:** `make data` → `make ingest` → `make warehouse` (đúng thứ tự của `make all`).
+- **Kiểm tra:** `tests/test_warehouse.py` thêm 2 test: khóa ngoại `fact_qc`–`dim_sample`, cờ `qc_outlier` của TV2 trùng
+  tầng cleansed (chỉ mẫu 21), và giả lập lô B4-CCG bị chặn thì 5 mẫu CCG không vào kho.
 
 ## ADR-030 — Nhập theo lô và kiểm tra file mẫu mới (`src/ingest.py`, công việc 2.4)
 - **Ngày:** 12/11/2026 · **Người quyết định:** TV2
@@ -407,4 +427,6 @@ tái lập được và truy ngược về nguồn.
 | 22/11/2026 | 2.6: vẽ lại F01, F04d bằng `viz.py` (6,5 in, chữ ≥ 10 pt); loại mô BM xám nhạt, PB đen | ADR-070 | TV6 |
 | 17/11/2026 | 2.2 bản 2: độ tin cậy (P/A theo lớp), độ vững, lô mới (`marker_consistency`, `batch_anomalies`), đọc kho DuckDB, `src/viz_gene.py`; St-Jude 41 giữ chiều, 0 đảo chiều | ADR-052 | TV4 |
 | 18/11/2026 | 2.2: `marker_consistency` thêm kiểm định hoán vị trong lô (St-Jude p = 2/56 ≈ 0,036) và cột `batch_diff_sd` | ADR-052 | TV4 |
+| 15/11/2026 | 2.3 bản 1: kho DuckDB `golub.duckdb` (`fact_expression` dạng dài, `dim_sample`, `dim_gene`, `dim_batch`); `sql/01` khớp Bảng 2.4 | ADR-040 | TV3 |
+| 23/11/2026 | 2.3 bản 2: `dim_batch`, `fact_qc` (theo mẫu), `log_ingest` lấy từ `src/ingest.py`; chỉ nạp mẫu của lô đạt; `sql/02` chất lượng theo lô | ADR-041 | TV3 |
 | 12/11/2026 | 2.4: bộ file lỗi mẫu sinh bằng code (`--demo`), F8 chất lượng theo lô, F10 bản cuối trên tầng curated theo style guide; mọi bước học chỉ dùng 38 mẫu huấn luyện | ADR-031 | TV2 |
