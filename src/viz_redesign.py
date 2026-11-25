@@ -1,8 +1,8 @@
 """TV5 - src/viz_redesign.py (Công việc 2.5: Tái thiết kế trực quan hóa Golub 1999; ADR-014, ADR-061).
 
 Tái thiết kế các hình kinh điển của bài báo Golub et al. (1999) theo chuẩn trực quan hóa hiện đại:
-    - Fig 2: Phân tích lân cận dùng hình F6 đã có ở mục 3.3.
-    - Fig 4: Phân cụm không giám sát bằng Self-Organizing Maps (SOM 1x2 và 2x2), đối chiếu cấu trúc lớp và chiếu không gian biểu hiện gen.
+    - Fig 2: Phân tích lân cận ALL/AML với 400 lần hoán vị nhãn.
+    - Fig 4: Phân cụm không giám sát bằng Self-Organizing Maps (SOM 1x2 và 2x2), đánh giá dự đoán nhãn cụm và so sánh từng cặp.
     - Fig 3A: Phân bố Prediction Strength (PS) của mô hình Weighted Voting.
     - F04 (hình bổ sung của nhóm): Phân tích lỗi Logistic Regression trên tập kiểm tra độc lập theo loại mô và nguồn thu thập.
 
@@ -12,8 +12,8 @@ Tuân thủ nghiêm ngặt Style Guide (docs/style_guide.md) và ADR-014:
     - Không chỉnh sửa src/viz.py của TV6.
 
 Cách dùng:
-    from src.viz_redesign import plot_fig4_som_redesign, plot_fig3a_prediction_strength, plot_fig4_error_analysis
-    fig_som = plot_fig4_som_redesign(X, samples, mode="report")
+    from src.viz_redesign import compute_fig4, plot_fig4_som_redesign, plot_fig3a_prediction_strength, plot_fig4_error_analysis
+    fig_som = plot_fig4_som_redesign(compute_fig4(X, samples), mode="report")
     fig3a = plot_fig3a_prediction_strength(ps_df, mode="report")
     fig4 = plot_fig4_error_analysis(preds, samples, mode="report")
 
@@ -23,33 +23,39 @@ Chạy trực tiếp:
 from __future__ import annotations
 
 
+from dataclasses import dataclass
+from itertools import combinations
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 from minisom import MiniSom
-from sklearn.decomposition import PCA
 
 try:
     from src.config import (
-        CURATED_DIR, PROJECT_ROOT, PS_THRESHOLD, RANDOM_SEED
+        PROJECT_ROOT, PS_THRESHOLD, RANDOM_SEED
     )
     from src.evaluate import evaluate, _baseline_pipeline
+    from src.golub_wv import GolubWeightedVoting, loocv
     from src.load import load_golub
+    from src.preprocess import GeneFilter
     from src.viz import (
-        CLASS_COLORS, CLASS_MARKERS, SUBTYPE_COLORS, SUBTYPE_MARKERS,
+        CLASS_COLORS, SUBTYPE_COLORS,
         SOURCE_COLORS, TISSUE_COLORS, NEUTRAL, NEUTRAL_LIGHT,
         style_rc, figsize, save_figure
     )
 except ModuleNotFoundError:
     from config import (
-        CURATED_DIR, PROJECT_ROOT, PS_THRESHOLD, RANDOM_SEED
+        PROJECT_ROOT, PS_THRESHOLD, RANDOM_SEED
     )
     from evaluate import evaluate, _baseline_pipeline
+    from golub_wv import GolubWeightedVoting, loocv
     from load import load_golub
+    from preprocess import GeneFilter
     from viz import (
-        CLASS_COLORS, CLASS_MARKERS, SUBTYPE_COLORS, SUBTYPE_MARKERS,
+        CLASS_COLORS, SUBTYPE_COLORS,
         SOURCE_COLORS, TISSUE_COLORS, NEUTRAL, NEUTRAL_LIGHT,
         style_rc, figsize, save_figure
     )
@@ -67,137 +73,164 @@ def fit_som_labels(X_mat: np.ndarray, shape: tuple[int, int], seed: int = RANDOM
     return np.array([np.ravel_multi_index(som.winner(x), shape) for x in X_mat])
 
 
-# --------------------------------------------------------------------------------------
-# 2. Tái thiết kế Fig 4: Khám phá lớp bằng SOM
-# --------------------------------------------------------------------------------------
-
-def plot_fig4_som_redesign(
-    X_filtered: pd.DataFrame,
-    samples: pd.DataFrame,
-    mode: str = "report",
-    seed: int = RANDOM_SEED
+def plot_fig2_neighborhood(
+    X: pd.DataFrame, samples: pd.DataFrame, mode: str = "report",
+    seed: int = RANDOM_SEED, n_permutations: int = 400,
 ) -> plt.Figure:
-    """Tái thiết kế phần SOM của Fig. 4 trong bài báo Golub 1999.
+    """Đếm probe vượt ngưỡng SNR ở 38 mẫu train, theo từng phía ALL/AML."""
+    rc = style_rc(mode)
+    train = samples.loc[X.index, "split"].eq("train")
+    is_all = samples.loc[X.index[train], "class"].eq("ALL").to_numpy()
+    values = X.loc[train].to_numpy()
+    if min(is_all.sum(), (~is_all).sum()) < 2 or n_permutations < 1:
+        raise ValueError("Fig. 2 cần ít nhất hai mẫu mỗi lớp và một lượt hoán vị.")
+    thresholds = np.linspace(0, 1.8, 91)
 
-    Gồm 3 bảng liên kết:
-        (A) Thành phần lâm sàng các nơ-ron SOM 1x2 (38 mẫu huấn luyện): đối chiếu cụm A1/A2.
-        (B) Chiếu các mẫu lên PC1–PC2 và đánh dấu trung bình tọa độ của từng cụm SOM.
-        (C) Phân tách các nhóm con tế bào lympho (B-ALL vs T-ALL) trên mạng SOM 2x2 (4 nơ-ron).
-    """
+    def counts(mask):
+        a, b = values[mask], values[~mask]
+        spread = a.std(axis=0, ddof=1) + b.std(axis=0, ddof=1)
+        delta = a.mean(axis=0) - b.mean(axis=0)
+        snr = np.divide(delta, spread, out=np.zeros_like(delta), where=spread > 0)
+        return np.stack([
+            len(snr) - np.searchsorted(np.sort(scores), thresholds, side="right")
+            for scores in (snr, -snr)
+        ])
+
+    observed = counts(is_all)
+    rng = np.random.default_rng(seed)
+    controls = np.stack([counts(rng.permutation(is_all)) for _ in range(n_permutations)])
+    band_95, band_99 = np.percentile(controls, [95, 99], axis=0)
+    with plt.rc_context(rc):
+        fig, axes = plt.subplots(1, 2, figsize=figsize(mode, 0.63), sharey=True, layout="constrained")
+        for i, (ax, label) in enumerate(zip(axes, ("ALL", "AML"))):
+            ax.plot(thresholds, observed[i], color=CLASS_COLORS[label], label="Nhãn thật")
+            ax.plot(thresholds, band_95[i], "--", color=NEUTRAL, label="Phân vị 95%")
+            ax.plot(thresholds, band_99[i], ":", color="black", label="Phân vị 99%")
+            ax.set(title=f"Cao hơn ở {label}", xlabel="Ngưỡng |SNR|", ylim=(0, None))
+        axes[0].set_ylabel("Số probe vượt ngưỡng")
+        axes[1].legend(frameon=False)
+        fig.suptitle(f"Fig. 2 · Phân tích lân cận ALL/AML\n{len(values)} mẫu train · {n_permutations} hoán vị nhãn")
+        return fig
+
+
+@dataclass
+class SomPanels:
+    probe_count: int
+    seed: int
+    two_clusters: pd.DataFrame
+    four_clusters: pd.DataFrame
+    ps_cv: np.ndarray
+    ps_test: np.ndarray
+    null_medians: np.ndarray
+    pairwise: dict[str, pd.DataFrame]
+
+
+def compute_fig4(
+    X: pd.DataFrame, samples: pd.DataFrame, seed: int = RANDOM_SEED, n_permutations: int = 100,
+) -> SomPanels:
+    """Fit và lọc SOM trên train. LOOCV kiểm tra khả năng dự đoán nhãn cụm cố định."""
+    samples = samples.loc[X.index]
+    train = samples["split"].eq("train")
+    X_train, X_test = X.loc[train], X.loc[samples["split"].eq("test")]
+
+    # Ghi chú 33 của bài gốc dùng ngưỡng biến thiên năm lần.
+    X_som = GeneFilter(ratio=5, diff=0).fit_transform(X_train)
+    X_values = X_som.to_numpy()
+    two = fit_som_labels(X_values, (1, 2), seed=seed, n_iter=1000)
+    four = fit_som_labels(X_values, (2, 2), seed=seed, n_iter=1500)
+    two_counts = pd.crosstab(two, samples.loc[train, "class"]).reindex(
+        index=range(2), columns=["ALL", "AML"], fill_value=0,
+    ).sort_values("ALL", ascending=False)
+    four_counts = pd.crosstab(four, samples.loc[train, "subtype"]).reindex(
+        index=range(4), columns=["B-ALL", "T-ALL", "AML"], fill_value=0,
+    )
+    if min(two_counts.sum(axis=1)) < 3 or n_permutations < 1:
+        raise ValueError("Fig. 4B cần hai cụm có ít nhất ba mẫu và một lượt hoán vị.")
+
+    # API Weighted Voting dùng hai giá trị ALL/AML làm mã nội bộ cho nhãn cụm.
+    labels = np.where(two == two_counts.index[0], "ALL", "AML")
+    n_genes = 20
+
+    def scores(y):
+        ps_cv = loocv(X_train, y, n_genes=n_genes)["ps"].to_numpy()
+        model = GolubWeightedVoting(n_genes=n_genes).fit(X_train, y)
+        return ps_cv, model.prediction_strength(X_test)
+
+    ps_cv, ps_test = scores(labels)
+    rng = np.random.default_rng(seed)
+    null_medians = np.array([
+        [np.median(ps) for ps in scores(rng.permutation(labels))]
+        for _ in range(n_permutations)
+    ])
+
+    pairwise = {}
+    for left, right in combinations(range(4), 2):
+        pair = f"B{left + 1}–B{right + 1}"
+        if min(four_counts.loc[[left, right]].sum(axis=1)) < 3:
+            # Với ít hơn ba mẫu, một lượt LOOCV không ước lượng được SD của lớp.
+            pairwise[pair] = pd.DataFrame(columns=["true", "pred", "ps"])
+            continue
+        keep = np.isin(four, [left, right])
+        y = np.where(four[keep] == left, "ALL", "AML")
+        pairwise[pair] = loocv(X_train.loc[keep], y, n_genes=n_genes)
+
+    return SomPanels(X_som.shape[1], seed, two_counts, four_counts, ps_cv, ps_test, null_medians, pairwise)
+
+
+def plot_fig4_som_redesign(result: SomPanels, mode: str = "report") -> plt.Figure:
+    """Vẽ bốn panel khám phá lớp của Fig. 4."""
     with plt.rc_context(style_rc(mode)):
-        samples = samples.loc[X_filtered.index]
-        fig = plt.figure(figsize=(figsize(mode, height_ratio=0.5)[0], figsize(mode, height_ratio=0.5)[1] * 1.1))
-        gs = fig.add_gridspec(1, 3, width_ratios=[1.1, 1.4, 1.2], wspace=0.32)
-
-        # ---------------------------------------------------------
-        # Panel A: SOM 1x2 trên 38 mẫu train
-        # ---------------------------------------------------------
-        ax_a = fig.add_subplot(gs[0, 0])
-        train_mask = samples["split"] == "train"
-        samples_tr = samples[train_mask]
-        X_tr = X_filtered.loc[samples_tr.index].values
-
-        lab_1x2 = fit_som_labels(X_tr, (1, 2), seed=seed, n_iter=1000)
-        ct_1x2 = pd.crosstab(lab_1x2, samples_tr["class"]).reindex(
-            index=range(2), columns=["ALL", "AML"], fill_value=0,
+        fig, ((ax_a, ax_b), (ax_c, ax_d)) = plt.subplots(
+            2, 2, figsize=figsize(mode, 1.02 if mode == "report" else 0.7), layout="constrained",
         )
+        fig.suptitle(f"Fig. 4 · Khám phá lớp bằng SOM\n{result.two_clusters.to_numpy().sum()} mẫu train · {result.probe_count:,} probe · seed {result.seed}")
 
-        # Sắp xếp nút có ALL chiếm ưu thế sang trái (A1)
-        if ct_1x2.loc[0, "ALL"] < ct_1x2.loc[1, "ALL"]:
-            ct_1x2 = ct_1x2.reindex([1, 0]).reset_index(drop=True)
+        def composition(ax, counts, positions, colors):
+            bottom = np.zeros(len(counts))
+            for label, hatch in zip(counts.columns, ("", "//", "..")):
+                ax.bar(positions, counts[label], bottom=bottom, color=colors[label],
+                       label=label, width=0.62, hatch=hatch, edgecolor="white")
+                bottom += counts[label].to_numpy()
+            ax.set_ylim(0, 1.5 * bottom.max())
+            ax.set_ylabel("Số mẫu")
+            ax.legend(frameon=False)
 
-        # Số liệu bài báo: A1 (24 ALL, 1 AML), A2 (3 ALL, 10 AML)
-        paper_counts = [("Bài báo\nCụm A1", 24, 1), ("Bài báo\nCụm A2", 3, 10),
-                        ("Nhóm\nNút 1", int(ct_1x2.loc[0, "ALL"]), int(ct_1x2.loc[0, "AML"])),
-                        ("Nhóm\nNút 2", int(ct_1x2.loc[1, "ALL"]), int(ct_1x2.loc[1, "AML"]))]
+        paper = pd.DataFrame({"ALL": [24, 3], "AML": [1, 10]})
+        composition(ax_a, pd.concat([paper, result.two_clusters]), [0, 1, 2.5, 3.5], CLASS_COLORS)
+        ax_a.set(xticks=[0, 1, 2.5, 3.5], xticklabels=["A1", "A2", "A1", "A2"], xlabel="Bài báo     |     Nhóm")
+        ax_a.set_title("(A) SOM hai cụm")
+        composition(ax_c, result.four_clusters, range(4), SUBTYPE_COLORS)
+        ax_c.set(xticks=range(4), xticklabels=["B1", "B2", "B3", "B4"], title="(C) SOM bốn cụm")
 
-        x_pos = np.arange(len(paper_counts))
-        all_bars = [p[1] for p in paper_counts]
-        aml_bars = [p[2] for p in paper_counts]
+        groups = [result.ps_cv, result.ps_test, result.null_medians[:, 0], result.null_medians[:, 1]]
+        ax_b.boxplot(groups, widths=0.53, medianprops={"color": CLASS_COLORS["ALL"]})
+        ax_b.set(xticks=range(1, 5), xticklabels=["SOM\nLOOCV", "SOM\nTest", "Xáo nhãn\nLOOCV", "Xáo nhãn\nTest"])
+        ax_b.set_title("(B) PS của mô hình dự đoán cụm")
+        ax_b.set_xlabel(f"Xáo nhãn: trung vị từ {len(result.null_medians)} lượt")
 
-        ax_a.bar(x_pos, all_bars, color=CLASS_COLORS["ALL"], label="ALL", width=0.6)
-        ax_a.bar(x_pos, aml_bars, bottom=all_bars, color=CLASS_COLORS["AML"], label="AML", width=0.6, hatch="//", edgecolor="white")
-
-        for i, (name, a_val, m_val) in enumerate(paper_counts):
-            total = a_val + m_val
-            ax_a.text(i, total + 0.6, f"{a_val}/{m_val}", ha="center", va="bottom",
-                      fontsize=style_rc(mode)["font.size"] - 1, fontweight="bold")
-
-        ax_a.set_xticks(x_pos)
-        ax_a.set_xticklabels(["A1", "A2", "1", "2"])
-        ax_a.set_xlabel("A1–A2: bài báo  ·  1–2: nhóm")
-        ax_a.set_ylabel("Số mẫu bệnh nhân")
-        ax_a.set_ylim(0, 1.4 * max(a + m for _, a, m in paper_counts))
-        ax_a.set_title(f"(A) SOM 1×2 ({len(samples_tr)} mẫu train)\n{X_filtered.shape[1]:,} probe · seed {seed}")
-        ax_a.legend(frameon=False, loc="upper center", ncol=2)
-
-        # ---------------------------------------------------------
-        # Panel B: Chiếu không gian PCA PC1-PC2 và biên cụm SOM
-        # ---------------------------------------------------------
-        ax_b = fig.add_subplot(gs[0, 1])
-        pca = PCA(n_components=2, random_state=seed)
-        X_pca = pca.fit_transform(X_filtered.values)
-        var1, var2 = pca.explained_variance_ratio_ * 100
-
-        # Huấn luyện SOM 1x2 trên toàn bộ 72 mẫu
-        lab_all_1x2 = fit_som_labels(X_filtered.values, (1, 2), seed=seed, n_iter=1500)
-
-        for cls_name, color in CLASS_COLORS.items():
-            mask_cls = samples["class"] == cls_name
-            marker = CLASS_MARKERS[cls_name]
-            ax_b.scatter(
-                X_pca[mask_cls, 0], X_pca[mask_cls, 1],
-                c=color, marker=marker, s=style_rc(mode)["lines.linewidth"] * 24,
-                alpha=0.85, edgecolors="white", linewidth=0.6, label=cls_name, zorder=3
+        rng = np.random.default_rng(result.seed)
+        for pos, scores in enumerate(result.pairwise.values()):
+            if scores.empty:
+                ax_d.text(pos, 0.52, "Thiếu mẫu", rotation=90, ha="center", va="center")
+                continue
+            x = pos + rng.uniform(-0.15, 0.15, size=len(scores))
+            color = np.select(
+                [scores["pred"].eq("uncertain"), scores["pred"].eq(scores["true"])],
+                ["#777777", CLASS_COLORS["ALL"]], default="#D55E00",
             )
-
-        # Đánh dấu trung bình tọa độ PCA của các mẫu trong từng cụm.
-        for n_id in np.unique(lab_all_1x2):
-            pts = X_pca[lab_all_1x2 == n_id]
-            c = pts.mean(axis=0)
-            ax_b.scatter(c[0], c[1], s=style_rc(mode)["lines.linewidth"] * 75,
-                         facecolors="none", edgecolors=NEUTRAL, linewidths=2.0, zorder=4)
-            ax_b.text(c[0], c[1] + 1.2, f"Tâm cụm {n_id + 1}", ha="center", va="bottom",
-                      color=NEUTRAL, fontweight="bold")
-
-        ax_b.set_xlabel(f"PC1 ({var1:.1f}% phương sai)")
-        ax_b.set_ylabel(f"PC2 ({var2:.1f}% phương sai)")
-        ax_b.set_title("(B) Chiếu PCA theo lớp gốc\nvà tâm cụm SOM")
-        ax_b.legend(frameon=False, loc="lower right")
-
-        # ---------------------------------------------------------
-        # Panel C: SOM 2x2 trên 72 mẫu (Khảo sát phân nhóm sâu)
-        # ---------------------------------------------------------
-        ax_c = fig.add_subplot(gs[0, 2])
-        lab_2x2 = fit_som_labels(X_filtered.values, (2, 2), seed=seed, n_iter=1500)
-        n_nodes = 4
-        ct_2x2 = pd.crosstab(lab_2x2, samples["subtype"]).reindex(
-            index=range(n_nodes), columns=["B-ALL", "T-ALL", "AML"], fill_value=0,
-        )
-        x_c = np.arange(n_nodes)
-        b_vals = ct_2x2["B-ALL"].values
-        t_vals = ct_2x2["T-ALL"].values
-        m_vals = ct_2x2["AML"].values
-
-        ax_c.bar(x_c, b_vals, color=SUBTYPE_COLORS["B-ALL"], label="B-ALL", width=0.55)
-        ax_c.bar(x_c, t_vals, bottom=b_vals, color=SUBTYPE_COLORS["T-ALL"], label="T-ALL", width=0.55, hatch="..", edgecolor="white")
-        ax_c.bar(x_c, m_vals, bottom=b_vals + t_vals, color=SUBTYPE_COLORS["AML"], label="AML", width=0.55, hatch="//", edgecolor="white")
-
-        for idx in range(n_nodes):
-            tot = b_vals[idx] + t_vals[idx] + m_vals[idx]
-            ax_c.text(idx, tot + 0.5, f"n={tot}", ha="center", va="bottom",
-                      fontsize=style_rc(mode)["font.size"] - 1)
-
-        ax_c.set_xticks(x_c)
-        ax_c.set_xticklabels(range(1, n_nodes + 1))
-        ax_c.set_xlabel("Nút SOM")
-        ax_c.set_ylabel("Số mẫu")
-        ax_c.set_ylim(0, 1.55 * (b_vals + t_vals + m_vals).max())
-        ax_c.set_title(f"(C) SOM 2×2 ({len(samples)} mẫu)\nKhảo sát nhóm con")
-        ax_c.legend(frameon=False, loc="upper right")
-
-        fig.suptitle("Khám phá lớp bằng SOM (Golub et al., 1999, Fig. 4)",
-                     y=1.04, fontweight="bold")
+            ax_d.scatter(x, scores["ps"], c=color, s=13, alpha=0.8)
+            ax_d.hlines(scores["ps"].median(), pos - 0.21, pos + 0.21, color="black")
+        ax_d.set(xticks=range(len(result.pairwise)), xticklabels=list(result.pairwise),
+                 title="(D) PS theo từng cặp cụm (LOOCV)", xlim=(-0.45, len(result.pairwise) - 0.55))
+        ax_d.tick_params(axis="x", labelrotation=32)
+        legend = [
+            Line2D([], [], marker="o", linestyle="none", color=color, label=label)
+            for color, label in ((CLASS_COLORS["ALL"], "Đúng"), ("#D55E00", "Sai"), ("#777777", "Bất định"))
+        ]
+        ax_d.legend(handles=legend, ncol=3, loc="upper center", bbox_to_anchor=(0.5, -0.23), frameon=False)
+        for ax in (ax_b, ax_d):
+            ax.axhline(PS_THRESHOLD, color=NEUTRAL, linestyle="--", alpha=0.8)
+            ax.set(ylim=(0, 1.02), ylabel="Prediction Strength")
         return fig
 
 
@@ -464,10 +497,10 @@ def plot_fig3a_prediction_strength(ps_df: pd.DataFrame | None = None, mode: str 
 # --------------------------------------------------------------------------------------
 
 def generate_all_redesigned_figures() -> None:
-    """Sinh toàn bộ hình F02, F03a và F04 ở cả hai phiên bản report và slide."""
-    print("--- Bắt đầu sinh hình F02, F03a và F04 tái thiết kế ---")
+    """Sinh Fig. 2, Fig. 3A, Fig. 4 và F04 bổ sung ở cả hai định dạng."""
+    print("Đang tính các panel SOM và sinh hình TV5...")
     X_cu, samples = load_golub("curated")
-    X_som = pd.read_parquet(CURATED_DIR / "X_log10_filtered.parquet")
+    som = compute_fig4(X_cu, samples)
 
     # 1. Chạy đánh giá để lấy bảng dự đoán 34 mẫu kiểm tra cho Fig 4
     pipe = _baseline_pipeline(k=50)
@@ -475,7 +508,11 @@ def generate_all_redesigned_figures() -> None:
     preds = res["predictions"]
 
     for mode in ("report", "slide"):
-        fig_som = plot_fig4_som_redesign(X_som, samples, mode=mode)
+        fig2 = plot_fig2_neighborhood(X_cu, samples, mode=mode)
+        print(f"[{mode.upper()}] Đã lưu: {save_figure(fig2, 'F02_neighborhood_redesign', mode)}")
+        plt.close(fig2)
+
+        fig_som = plot_fig4_som_redesign(som, mode=mode)
         path_som = save_figure(fig_som, "F02_som_redesign", mode=mode)
         plt.close(fig_som)
         print(f"[{mode.upper()}] Đã lưu: {path_som}")
@@ -492,7 +529,7 @@ def generate_all_redesigned_figures() -> None:
         plt.close(fig4)
         print(f"[{mode.upper()}] Đã lưu: {path4}")
 
-    print("--- Hoàn tất xuất sắc việc tạo hình F02, F03a và F04! ---")
+
 
 
 if __name__ == "__main__":

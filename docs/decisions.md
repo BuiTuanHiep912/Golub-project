@@ -420,10 +420,7 @@ tái lập được và truy ngược về nguồn.
 - **Ngày:** 15/11/2026 (bổ sung Fig 3A ngày 25/11/2026) · **Người quyết định:** TV5 (theo ADR-014 của TV1 và Kế hoạch Giai đoạn 2)
 - **Bối cảnh:** Các hình gốc trong bài báo Golub et al. (Science, 1999) sử dụng công nghệ đồ họa cũ (thang xám, thiếu phân tách thành phần lâm sàng, biểu đồ thanh mật độ thô khó quan sát chi tiết từng bệnh nhân). Mục tiêu môn học yêu cầu trực quan hóa hiện đại, an toàn cho người mù màu và tích hợp góc nhìn Quản trị dữ liệu (Data Governance).
 - **Quyết định:** Tạo module `src/viz_redesign.py` và notebook `notebooks/05_viz_redesign.ipynb` độc lập với `src/viz.py` của TV6:
-  1. **Fig. 2 (phân tích lân cận):** Dùng lại hình F6 của nhóm. **Fig. 4 (khám phá lớp bằng SOM):**
-     - Bảng A: Biểu đồ thanh đối chiếu thành phần mẫu ALL/AML trong 2 nơ-ron SOM 1×2 (38 mẫu train) giữa bài báo gốc và thực nghiệm của nhóm.
-     - Bảng B: Chiếu không gian biểu hiện gen PCA (PC1 vs PC2) kết hợp tọa độ tâm nơ-ron SOM, làm rõ cấu trúc ranh giới cụm tự nhiên.
-     - Bảng C: Khám phá phân nhóm sâu trên mạng SOM 2×2 (4 nơ-ron, 72 mẫu), cho thấy T-ALL chưa tạo cụm riêng ở cấu hình của nhóm.
+  1. **Fig. 2 và Fig. 4:** Fig. 2 dùng SNR trên 38 mẫu train và 400 hoán vị nhãn cho hai hướng ALL/AML. Fig. 4 lọc biến thiên năm lần và fit hai SOM trên train. Panel A/C cho thành phần cụm. Panel B so sánh PS của mô hình dự đoán cụm ở LOOCV và test với 100 lần hoán vị giữ kích thước cụm. Panel D so sánh PS ở LOOCV của sáu cặp cụm. Bộ dự đoán cụm dùng Weighted Voting với 20 probe.
   2. **Fig 3A (Prediction Strength):**
      - Bảng A (LOOCV 38 mẫu): Trực quan hóa giá trị PS từ `results/metrics/golub_ps.csv` (TV1), vạch ngưỡng $PS = 0.30$, phủ dải cảnh báo "Uncertain" ($PS < 0.30$) thể chế hóa cơ chế *Human-in-the-loop*; 36/38 mẫu chắc chắn và đúng 100%, 2 mẫu rơi vào vùng không chắc chắn (#12, #35).
      - Bảng B (34 mẫu kiểm tra): 33 mẫu chắc chắn, đúng 32/33. Mẫu 66 được dự đoán thành ALL với PS = 0,30004, sát ngưỡng 0,30. Trong 10 mẫu máu ngoại vi, 9 mẫu được dự đoán đúng và mẫu 67 có nhãn `uncertain`.
@@ -431,8 +428,8 @@ tái lập được và truy ngược về nguồn.
      - Bảng A: Xác suất lớp AML do Logistic Regression ước tính. Mô hình đọc dữ liệu curated log10, fit trên 38 mẫu train và dự đoán 34 mẫu test. Ngưỡng phân loại là 0,5 và dải 0,3–0,7 dùng làm tham chiếu trực quan.
      - Bảng B: Dải kiểm định Quản trị dữ liệu (Governance Tracks) gồm Loại mô (BM vs PB) và Nguồn bệnh viện (DFCI, CALGB, CCG, St-Jude).
      - Kết quả Logistic Regression: 33/34 mẫu đúng, gồm cả 10 mẫu máu ngoại vi (PB). Mẫu 66 (AML, CCG, BM) được dự đoán thành ALL.
-  4. **Quy chuẩn đồ họa:** Đủ 2 phiên bản `report` (300 dpi, chữ >= 10 pt) và `slide` (150 dpi, chữ >= 16 pt) lưu tại `results/figures/report/` và `results/figures/slides/`. Bảng màu Okabe-Ito: ALL (`#0072B2`), AML (`#E69F00`).
-- **Kiểm thử:** Đã bổ sung `tests/test_viz_redesign.py` (6 test) kiểm tra việc sinh hình, kích thước, định dạng và tính hợp lệ cho cả 3 hình; toàn bộ test đạt `PASSED`.
+  4. **Quy chuẩn đồ họa:** Đủ 2 phiên bản `report` (300 dpi) và `slide` (150 dpi) lưu tại `results/figures/report/` và `results/figures/slides/`. Bảng màu Okabe-Ito: ALL (`#0072B2`), AML (`#E69F00`).
+- **Kiểm thử:** `tests/test_viz_redesign.py` kiểm tra dữ liệu train/test, các panel, thống kê dự đoán và tám tệp hình.
 
 ## Nhật ký nhanh (mục 5.2 kế hoạch)
 
