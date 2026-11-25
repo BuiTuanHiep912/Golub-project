@@ -14,7 +14,10 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.config import REPORT_FIG_DIR, SLIDE_FIG_DIR
-from src.viz_redesign import fit_som_labels, plot_fig2_som_redesign, plot_fig4_error_analysis
+from src.viz_redesign import (
+    fit_som_labels, plot_fig2_som_redesign,
+    plot_fig3a_prediction_strength, plot_fig4_error_analysis
+)
 
 
 @pytest.fixture(scope="module")
@@ -57,6 +60,21 @@ def mock_predictions(mock_discovery_data):
     return preds
 
 
+@pytest.fixture(scope="module")
+def mock_ps_df():
+    """Tạo bảng Prediction Strength mô phỏng cho test."""
+    return pd.DataFrame({
+        "sample_id": [1, 2, 12, 35, 66, 67, 39, 40],
+        "true": ["ALL", "ALL", "ALL", "AML", "AML", "ALL", "AML", "ALL"],
+        "pred": ["ALL", "ALL", "uncertain", "uncertain", "ALL", "uncertain", "AML", "ALL"],
+        "ps": [0.95, 0.85, 0.05, 0.15, 0.30004, 0.12, 0.75, 0.90],
+        "set": ["loocv", "loocv", "loocv", "loocv", "test", "test", "test", "test"],
+        "source": ["DFCI", "DFCI", "DFCI", "CALGB", "CCG", "DFCI", "CALGB", "DFCI"],
+        "tissue": ["BM", "BM", "BM", "BM", "BM", "PB", "BM", "BM"],
+        "subtype": ["B-ALL", "T-ALL", "B-ALL", "AML", "AML", "T-ALL", "AML", "B-ALL"]
+    })
+
+
 def test_fit_som_labels_shape(mock_discovery_data):
     X_df, _ = mock_discovery_data
     labels = fit_som_labels(X_df.values, (1, 2), seed=42, n_iter=100)
@@ -72,6 +90,13 @@ def test_plot_fig2_som_redesign_returns_figure(mock_discovery_data):
         plt.close(fig)
 
 
+def test_plot_fig3a_prediction_strength_returns_figure(mock_ps_df):
+    for mode in ("report", "slide"):
+        fig = plot_fig3a_prediction_strength(mock_ps_df, mode=mode)
+        assert isinstance(fig, plt.Figure)
+        plt.close(fig)
+
+
 def test_plot_fig4_error_analysis_returns_figure(mock_discovery_data, mock_predictions):
     _, samples = mock_discovery_data
     for mode in ("report", "slide"):
@@ -80,10 +105,13 @@ def test_plot_fig4_error_analysis_returns_figure(mock_discovery_data, mock_predi
         plt.close(fig)
 
 
-def test_fig_styles_reject_invalid_mode(mock_discovery_data, mock_predictions):
+def test_fig_styles_reject_invalid_mode(mock_discovery_data, mock_predictions, mock_ps_df):
     X_df, samples = mock_discovery_data
     with pytest.raises(ValueError):
         plot_fig2_som_redesign(X_df, samples, mode="invalid")
+
+    with pytest.raises(ValueError):
+        plot_fig3a_prediction_strength(mock_ps_df, mode="invalid")
 
     with pytest.raises(ValueError):
         plot_fig4_error_analysis(mock_predictions, samples, mode="invalid")
@@ -92,5 +120,7 @@ def test_fig_styles_reject_invalid_mode(mock_discovery_data, mock_predictions):
 def test_redesigned_figures_files_exist():
     assert (REPORT_FIG_DIR / "F02_som_redesign_report.png").exists()
     assert (SLIDE_FIG_DIR / "F02_som_redesign_slide.png").exists()
+    assert (REPORT_FIG_DIR / "F03a_prediction_strength_report.png").exists()
+    assert (SLIDE_FIG_DIR / "F03a_prediction_strength_slide.png").exists()
     assert (REPORT_FIG_DIR / "F04_error_analysis_report.png").exists()
     assert (SLIDE_FIG_DIR / "F04_error_analysis_slide.png").exists()
