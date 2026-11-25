@@ -1,7 +1,8 @@
 """TV5 - src/viz_redesign.py (Công việc 2.5: Tái thiết kế trực quan hóa Golub 1999; ADR-014, ADR-061).
 
 Tái thiết kế các hình kinh điển của bài báo Golub et al. (1999) theo chuẩn trực quan hóa hiện đại:
-    - Fig 2: Phân cụm không giám sát bằng Self-Organizing Maps (SOM 1x2 và 2x2), đối chiếu cấu trúc lớp và chiếu không gian biểu hiện gen.
+    - Fig 2: Phân tích lân cận dùng hình F6 đã có ở mục 3.3.
+    - Fig 4: Phân cụm không giám sát bằng Self-Organizing Maps (SOM 1x2 và 2x2), đối chiếu cấu trúc lớp và chiếu không gian biểu hiện gen.
     - Fig 3A: Phân bố Prediction Strength (PS) của mô hình Weighted Voting.
     - F04 (hình bổ sung của nhóm): Phân tích lỗi Logistic Regression trên tập kiểm tra độc lập theo loại mô và nguồn thu thập.
 
@@ -11,8 +12,8 @@ Tuân thủ nghiêm ngặt Style Guide (docs/style_guide.md) và ADR-014:
     - Không chỉnh sửa src/viz.py của TV6.
 
 Cách dùng:
-    from src.viz_redesign import plot_fig2_som_redesign, plot_fig3a_prediction_strength, plot_fig4_error_analysis
-    fig2 = plot_fig2_som_redesign(X, samples, mode="report")
+    from src.viz_redesign import plot_fig4_som_redesign, plot_fig3a_prediction_strength, plot_fig4_error_analysis
+    fig_som = plot_fig4_som_redesign(X, samples, mode="report")
     fig3a = plot_fig3a_prediction_strength(ps_df, mode="report")
     fig4 = plot_fig4_error_analysis(preds, samples, mode="report")
 
@@ -32,7 +33,7 @@ from sklearn.decomposition import PCA
 
 try:
     from src.config import (
-        PROJECT_ROOT, PS_THRESHOLD, RANDOM_SEED
+        CURATED_DIR, PROJECT_ROOT, PS_THRESHOLD, RANDOM_SEED
     )
     from src.evaluate import evaluate, _baseline_pipeline
     from src.load import load_golub
@@ -43,7 +44,7 @@ try:
     )
 except ModuleNotFoundError:
     from config import (
-        PROJECT_ROOT, PS_THRESHOLD, RANDOM_SEED
+        CURATED_DIR, PROJECT_ROOT, PS_THRESHOLD, RANDOM_SEED
     )
     from evaluate import evaluate, _baseline_pipeline
     from load import load_golub
@@ -55,7 +56,7 @@ except ModuleNotFoundError:
 
 
 # --------------------------------------------------------------------------------------
-# 1. Huấn luyện SOM hỗ trợ Fig 2
+# 1. Huấn luyện SOM hỗ trợ Fig 4
 # --------------------------------------------------------------------------------------
 
 def fit_som_labels(X_mat: np.ndarray, shape: tuple[int, int], seed: int = RANDOM_SEED, n_iter: int = 1500) -> np.ndarray:
@@ -67,23 +68,24 @@ def fit_som_labels(X_mat: np.ndarray, shape: tuple[int, int], seed: int = RANDOM
 
 
 # --------------------------------------------------------------------------------------
-# 2. Tái thiết kế Fig 2: SOM Class Discovery
+# 2. Tái thiết kế Fig 4: Khám phá lớp bằng SOM
 # --------------------------------------------------------------------------------------
 
-def plot_fig2_som_redesign(
+def plot_fig4_som_redesign(
     X_filtered: pd.DataFrame,
     samples: pd.DataFrame,
     mode: str = "report",
     seed: int = RANDOM_SEED
 ) -> plt.Figure:
-    """Tái thiết kế Hình 2 của bài báo Golub 1999: Khám phá lớp bằng mạng SOM.
+    """Tái thiết kế phần SOM của Fig. 4 trong bài báo Golub 1999.
 
     Gồm 3 bảng liên kết:
         (A) Thành phần lâm sàng các nơ-ron SOM 1x2 (38 mẫu huấn luyện): đối chiếu cụm A1/A2.
-        (B) Chiếu các mẫu và nơ-ron SOM lên không gian PCA PC1-PC2 để thấy ranh giới phân tách.
+        (B) Chiếu các mẫu lên PC1–PC2 và đánh dấu trung bình tọa độ của từng cụm SOM.
         (C) Phân tách các nhóm con tế bào lympho (B-ALL vs T-ALL) trên mạng SOM 2x2 (4 nơ-ron).
     """
     with plt.rc_context(style_rc(mode)):
+        samples = samples.loc[X_filtered.index]
         fig = plt.figure(figsize=(figsize(mode, height_ratio=0.5)[0], figsize(mode, height_ratio=0.5)[1] * 1.1))
         gs = fig.add_gridspec(1, 3, width_ratios=[1.1, 1.4, 1.2], wspace=0.32)
 
@@ -96,11 +98,9 @@ def plot_fig2_som_redesign(
         X_tr = X_filtered.loc[samples_tr.index].values
 
         lab_1x2 = fit_som_labels(X_tr, (1, 2), seed=seed, n_iter=1000)
-        ct_1x2 = pd.crosstab(lab_1x2, samples_tr["class"])
-        # Đảm bảo có đủ 2 cột ALL và AML
-        for col in ("ALL", "AML"):
-            if col not in ct_1x2.columns:
-                ct_1x2[col] = 0
+        ct_1x2 = pd.crosstab(lab_1x2, samples_tr["class"]).reindex(
+            index=range(2), columns=["ALL", "AML"], fill_value=0,
+        )
 
         # Sắp xếp nút có ALL chiếm ưu thế sang trái (A1)
         if ct_1x2.loc[0, "ALL"] < ct_1x2.loc[1, "ALL"]:
@@ -126,8 +126,8 @@ def plot_fig2_som_redesign(
         ax_a.set_xticks(x_pos)
         ax_a.set_xticklabels([p[0] for p in paper_counts])
         ax_a.set_ylabel("Số mẫu bệnh nhân")
-        ax_a.set_ylim(0, 32)
-        ax_a.set_title("(A) SOM 1×2 (38 mẫu train)\nĐối chiếu bài báo gốc")
+        ax_a.set_ylim(0, 1.25 * max(a + m for _, a, m in paper_counts))
+        ax_a.set_title(f"(A) SOM 1×2 ({len(samples_tr)} mẫu train)\n{X_filtered.shape[1]:,} probe · seed {seed}")
         ax_a.legend(frameon=False, loc="upper center", ncol=2)
 
         # ---------------------------------------------------------
@@ -150,21 +150,18 @@ def plot_fig2_som_redesign(
                 alpha=0.85, edgecolors="white", linewidth=0.6, label=cls_name, zorder=3
             )
 
-        # Vẽ đường ellipse / ranh giới gần đúng giữa 2 nơ-ron SOM
-        centroids_pca = []
+        # Đánh dấu trung bình tọa độ PCA của các mẫu trong từng cụm.
         for n_id in np.unique(lab_all_1x2):
             pts = X_pca[lab_all_1x2 == n_id]
             c = pts.mean(axis=0)
-            centroids_pca.append(c)
-            # Vẽ vòng tròn tâm nơ-ron
             ax_b.scatter(c[0], c[1], s=style_rc(mode)["lines.linewidth"] * 75,
                          facecolors="none", edgecolors=NEUTRAL, linewidths=2.0, zorder=4)
-            ax_b.text(c[0], c[1] + 1.2, f"Nút {n_id + 1}", ha="center", va="bottom",
+            ax_b.text(c[0], c[1] + 1.2, f"Tâm cụm {n_id + 1}", ha="center", va="bottom",
                       color=NEUTRAL, fontweight="bold")
 
         ax_b.set_xlabel(f"PC1 ({var1:.1f}% phương sai)")
         ax_b.set_ylabel(f"PC2 ({var2:.1f}% phương sai)")
-        ax_b.set_title("(B) Phân tách trên không gian biểu hiện gen\n(PCA & Tâm nơ-ron SOM)")
+        ax_b.set_title("(B) Chiếu PCA theo lớp gốc\nvà tâm cụm SOM")
         ax_b.legend(frameon=False, loc="lower right")
 
         # ---------------------------------------------------------
@@ -172,12 +169,10 @@ def plot_fig2_som_redesign(
         # ---------------------------------------------------------
         ax_c = fig.add_subplot(gs[0, 2])
         lab_2x2 = fit_som_labels(X_filtered.values, (2, 2), seed=seed, n_iter=1500)
-        ct_2x2 = pd.crosstab(lab_2x2, samples["subtype"])
-        for sub in ("B-ALL", "T-ALL", "AML"):
-            if sub not in ct_2x2.columns:
-                ct_2x2[sub] = 0
-
         n_nodes = 4
+        ct_2x2 = pd.crosstab(lab_2x2, samples["subtype"]).reindex(
+            index=range(n_nodes), columns=["B-ALL", "T-ALL", "AML"], fill_value=0,
+        )
         x_c = np.arange(n_nodes)
         b_vals = ct_2x2["B-ALL"].values
         t_vals = ct_2x2["T-ALL"].values
@@ -194,12 +189,12 @@ def plot_fig2_som_redesign(
 
         ax_c.set_xticks(x_c)
         ax_c.set_xticklabels([f"Nút {i+1}" for i in range(n_nodes)])
-        ax_c.set_ylabel("Số mẫu (72 bệnh nhân)")
-        ax_c.set_ylim(0, 32)
-        ax_c.set_title("(C) SOM 2×2 (72 mẫu)\nKhám phá phân nhóm phụ (H5)")
+        ax_c.set_ylabel("Số mẫu")
+        ax_c.set_ylim(0, 1.25 * (b_vals + t_vals + m_vals).max())
+        ax_c.set_title(f"(C) SOM 2×2 ({len(samples)} mẫu)\nKhảo sát nhóm con")
         ax_c.legend(frameon=False, loc="upper right")
 
-        fig.suptitle("F02. Tái thiết kế trực quan hóa Khám phá lớp bằng SOM (Golub et al., 1999, Fig. 2)",
+        fig.suptitle("Khám phá lớp bằng SOM (Golub et al., 1999, Fig. 4)",
                      y=1.04, fontweight="bold")
         return fig
 
@@ -477,6 +472,7 @@ def generate_all_redesigned_figures() -> None:
     """Sinh toàn bộ hình F02, F03a và F04 ở cả hai phiên bản report và slide."""
     print("--- Bắt đầu sinh hình F02, F03a và F04 tái thiết kế ---")
     X_cu, samples = load_golub("curated")
+    X_som = pd.read_parquet(CURATED_DIR / "X_log10_filtered.parquet")
 
     # 1. Chạy đánh giá để lấy bảng dự đoán 34 mẫu kiểm tra cho Fig 4
     pipe = _baseline_pipeline(k=50)
@@ -484,11 +480,10 @@ def generate_all_redesigned_figures() -> None:
     preds = res["predictions"]
 
     for mode in ("report", "slide"):
-        # Sinh Fig 2
-        fig2 = plot_fig2_som_redesign(X_cu, samples, mode=mode)
-        path2 = save_figure(fig2, "F02_som_redesign", mode=mode)
-        plt.close(fig2)
-        print(f"[{mode.upper()}] Đã lưu: {path2}")
+        fig_som = plot_fig4_som_redesign(X_som, samples, mode=mode)
+        path_som = save_figure(fig_som, "F02_som_redesign", mode=mode)
+        plt.close(fig_som)
+        print(f"[{mode.upper()}] Đã lưu: {path_som}")
 
         # Sinh Fig 3A
         fig3a = plot_fig3a_prediction_strength(ps_df=None, mode=mode)
@@ -496,7 +491,7 @@ def generate_all_redesigned_figures() -> None:
         plt.close(fig3a)
         print(f"[{mode.upper()}] Đã lưu: {path3a}")
 
-        # Sinh Fig 4
+        # Sinh hình bổ sung F04
         fig4 = plot_fig4_error_analysis(preds, samples, mode=mode)
         path4 = save_figure(fig4, "F04_error_analysis", mode=mode)
         plt.close(fig4)

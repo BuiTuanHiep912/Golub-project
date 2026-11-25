@@ -420,10 +420,10 @@ tái lập được và truy ngược về nguồn.
 - **Ngày:** 15/11/2026 (bổ sung Fig 3A ngày 25/11/2026) · **Người quyết định:** TV5 (theo ADR-014 của TV1 và Kế hoạch Giai đoạn 2)
 - **Bối cảnh:** Các hình gốc trong bài báo Golub et al. (Science, 1999) sử dụng công nghệ đồ họa cũ (thang xám, thiếu phân tách thành phần lâm sàng, biểu đồ thanh mật độ thô khó quan sát chi tiết từng bệnh nhân). Mục tiêu môn học yêu cầu trực quan hóa hiện đại, an toàn cho người mù màu và tích hợp góc nhìn Quản trị dữ liệu (Data Governance).
 - **Quyết định:** Tạo module `src/viz_redesign.py` và notebook `notebooks/05_viz_redesign.ipynb` độc lập với `src/viz.py` của TV6:
-  1. **Fig 2 (SOM Class Discovery):**
+  1. **Fig. 2 (phân tích lân cận):** Dùng lại hình F6 của nhóm. **Fig. 4 (khám phá lớp bằng SOM):**
      - Bảng A: Biểu đồ thanh đối chiếu thành phần mẫu ALL/AML trong 2 nơ-ron SOM 1×2 (38 mẫu train) giữa bài báo gốc và thực nghiệm của nhóm.
      - Bảng B: Chiếu không gian biểu hiện gen PCA (PC1 vs PC2) kết hợp tọa độ tâm nơ-ron SOM, làm rõ cấu trúc ranh giới cụm tự nhiên.
-     - Bảng C: Khám phá phân nhóm sâu trên mạng SOM 2×2 (4 nơ-ron, 72 mẫu), chứng minh T-ALL không tách khỏi B-ALL ở cấp độ không giám sát (ủng hộ H5 ở mức ALL/AML, bác bỏ ở mức subtype).
+     - Bảng C: Khám phá phân nhóm sâu trên mạng SOM 2×2 (4 nơ-ron, 72 mẫu), cho thấy T-ALL chưa tạo cụm riêng ở cấu hình của nhóm.
   2. **Fig 3A (Prediction Strength):**
      - Bảng A (LOOCV 38 mẫu): Trực quan hóa giá trị PS từ `results/metrics/golub_ps.csv` (TV1), vạch ngưỡng $PS = 0.30$, phủ dải cảnh báo "Uncertain" ($PS < 0.30$) thể chế hóa cơ chế *Human-in-the-loop*; 36/38 mẫu chắc chắn và đúng 100%, 2 mẫu rơi vào vùng không chắc chắn (#12, #35).
      - Bảng B (34 mẫu kiểm tra): 33 mẫu chắc chắn, đúng 32/33. Mẫu 66 được dự đoán thành ALL với PS = 0,30004, sát ngưỡng 0,30. Trong 10 mẫu máu ngoại vi, 9 mẫu được dự đoán đúng và mẫu 67 có nhãn `uncertain`.

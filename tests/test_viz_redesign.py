@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.config import REPORT_FIG_DIR, SLIDE_FIG_DIR
 from src.viz_redesign import (
-    fit_som_labels, plot_fig2_som_redesign,
+    fit_som_labels, plot_fig4_som_redesign,
     plot_fig3a_prediction_strength, plot_fig4_error_analysis
 )
 
@@ -82,11 +82,13 @@ def test_fit_som_labels_shape(mock_discovery_data):
     assert set(np.unique(labels)).issubset({0, 1})
 
 
-def test_plot_fig2_som_redesign_returns_figure(mock_discovery_data):
+def test_plot_fig4_som_redesign_returns_figure(mock_discovery_data):
     X_df, samples = mock_discovery_data
     for mode in ("report", "slide"):
-        fig = plot_fig2_som_redesign(X_df, samples, mode=mode, seed=42)
+        fig = plot_fig4_som_redesign(X_df, samples, mode=mode, seed=42)
         assert isinstance(fig, plt.Figure)
+        assert "Fig. 4" in fig.texts[-1].get_text()
+        assert "50 probe" in fig.axes[0].get_title()
         plt.close(fig)
 
 
@@ -114,7 +116,7 @@ def test_plot_fig4_error_analysis_returns_figure(mock_discovery_data, mock_predi
 def test_fig_styles_reject_invalid_mode(mock_discovery_data, mock_predictions, mock_ps_df):
     X_df, samples = mock_discovery_data
     with pytest.raises(ValueError):
-        plot_fig2_som_redesign(X_df, samples, mode="invalid")
+        plot_fig4_som_redesign(X_df, samples, mode="invalid")
 
     with pytest.raises(ValueError):
         plot_fig3a_prediction_strength(mock_ps_df, mode="invalid")
