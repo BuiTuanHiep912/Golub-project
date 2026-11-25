@@ -119,18 +119,68 @@ def test_static_plots_return_figures(ranking, values, consistency, mode):
             vg.plot_consistency(consistency, mode=mode)]
     for fig in figs:
         assert isinstance(fig, Figure)
-    assert len(figs[1].axes) == 4                             # DFCI, CALGB, St-Jude, CCG
-    assert len(figs[2].axes) == 2                             # BM, PB
+    assert len(figs[1].axes) == 1                             # một trục chung, không chia ô
+    assert len(figs[1].axes[0].get_xticks()) == 5             # DFCI ALL, CALGB AML, St-Jude ALL+AML, CCG AML
+    assert len(figs[2].axes[0].get_xticks()) == 3             # BM ALL+AML, PB AML
     import matplotlib.pyplot as plt
     for fig in figs:
         plt.close(fig)
 
 
-def test_gene_expression_one_panel_per_source(values):
+def test_gene_expression_only_groups_with_samples(values):
     fig = vg.plot_gene_expression(values, facet="source")
-    titles = [ax.get_title() for ax in fig.axes]
-    assert titles[0] == "DFCI" and titles[2].startswith("St-Jude")
-    assert len(titles) == 4
+    ax = fig.axes[0]
+    ticks = [t.get_text() for t in ax.get_xticklabels()]
+    assert ticks[0] == "ALL\nn=10" and ticks[1] == "AML\nn=6"   # DFCI chỉ có ALL, CALGB chỉ có AML: không cột n=0
+    headers = [t.get_text() for t in ax.texts]
+    assert "DFCI" in headers and "St-Jude · đủ 2 lớp" in headers and "CCG" in headers
+    assert any("mức sàn" in h for h in headers) is False      # dữ liệu giả không chạm mức sàn: không vẽ vạch sàn
+
+
+def test_expression_groups_positions(values):
+    groups = vg._expression_groups(values, "source")
+    assert [(lv, c) for lv, c, _ in groups] == [("DFCI", "ALL"), ("CALGB", "AML"), ("St-Jude", "ALL"),
+                                                ("St-Jude", "AML"), ("CCG", "AML")]
+    xs = [x for *_, x in groups]
+    assert xs[3] - xs[2] == 1.0 and xs[2] - xs[1] == 1.0 + vg.GROUP_GAP   # cùng lab sát nhau, khác lab có khoảng
+
+
+def test_gene_expression_by_subtype_and_ref_line(values):
+    fig = vg.plot_gene_expression(values, facet="subtype", ref_line=(2.5, "mốc"))
+    ax = fig.axes[0]
+    assert [t.get_text() for t in ax.texts if t.get_text() in ("B-ALL", "AML")] == ["B-ALL", "AML"]
+    assert any(t.get_text() == "mốc" for t in ax.texts)
+    import matplotlib.pyplot as plt
+    plt.close(fig)
+
+
+@pytest.fixture
+def sex():
+    return pd.DataFrame({"sample_id": [1, 2, 3, 4], "rps4y": [2.0, 3.3, 3.2, 2.05], "xist": [2.7, 2.2, 2.1, 2.6],
+                         "sex_recorded": ["F", "M", "F", None], "sex_inferred": ["F", "M", "M", "F"],
+                         "status": ["Khớp", "Khớp", "Lệch metadata", "Metadata thiếu"],
+                         "source": ["DFCI"] * 4})
+
+
+def test_plot_sex_check_labels_mismatch(sex):
+    fig = vg.plot_sex_check(sex)
+    assert any(t.get_text() == "mẫu 3" for t in fig.axes[0].texts)
+    import matplotlib.pyplot as plt
+    plt.close(fig)
+    with pytest.raises(ValueError):
+        vg.plot_sex_check(sex.drop(columns="xist"))
+
+
+@altair_only
+def test_sex_check_chart_builds(sex):
+    assert len(vg.sex_check_chart(sex).to_dict()["layer"]) == 2
+
+
+def test_swarm_offsets_spread_ties_and_stay_inside():
+    off = vg._swarm_offsets(np.full(30, 2.0), y_span=1.0, step=0.075, half_width=0.4)
+    assert len(np.unique(off.round(6))) > 10                  # 30 mẫu cùng mức sàn được dàn ra, không chồng
+    assert np.abs(off).max() <= 0.4 + 1e-9
+    assert vg._swarm_offsets(np.array([1.0]), 1.0, 0.075, 0.4).tolist() == [0.0]
 
 
 # ---------------------------------------------------------------- kiểm tra đầu vào

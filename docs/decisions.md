@@ -294,6 +294,96 @@ tái lập được và truy ngược về nguồn.
     để không đổi số liệu đã báo cáo; 9 gen "Chênh lệch nhỏ" ở St-Jude đều có |batch_diff_sd| ≤ 0,58.
   - Thêm 3 test (liệt kê cách xếp, kiểm định trên dữ liệu có tín hiệu và ngược chiều, cột chuẩn hóa) và khóa p = 2/56 trên
     dữ liệu thật. Toàn bộ repo 181 test đạt.
+- **Bổ sung 23/11 (mức nền cho `batch_anomalies`):**
+  - *Vấn đề:* với 50 gen, một mẫu bình thường có xác suất khoảng 2/39 vượt [min, max] của 38 mẫu ở mỗi gen, nên "có ít
+    nhất một gen ngoài khoảng" là chuyện thường. Kiểm tra bỏ-một-ra trên tập huấn luyện: **18/38 mẫu (47%) bình thường
+    cũng bị gắn cờ**, tức kết quả cũ "CCG 3/5 mẫu" không khác mức ngẫu nhiên.
+  - *Sửa:* `_reference_baseline()` bỏ từng mẫu huấn luyện ra, so với 37 mẫu còn lại, lấy mức lệch lớn nhất của mỗi mẫu;
+    ngưỡng đáng chú ý = phân vị 95% (`BASELINE_QUANTILE`) = **1,85 SD** trên dữ liệu thật. Thêm cột `notable`
+    (severity > ngưỡng), `attrs` `baseline_flagged`, `baseline_n`, `severity_cutoff`, `n_notable_samples`; `note` ghi
+    mức nền và mẫu vượt ngưỡng. Dòng cũ giữ nguyên để không mất thông tin, chỉ thêm cờ.
+  - *Kết quả trên 34 mẫu kiểm tra:* CCG, St-Jude, CALGB không mẫu nào vượt ngưỡng. Chỉ **mẫu 42 (DFCI, B-ALL)** vượt:
+    LTC4S (gen cao ở AML, hạng 3) ở đúng mức sàn 2,0, thấp hơn mọi mẫu tham chiếu (min 2,58), lệch 2,43 SD. Lệch theo
+    hướng "giống ALL hơn" và ở giới hạn đo của chip, nên là trường hợp cần xem chứ không phải mẫu sai.
+  - Thêm 2 test (mức nền bỏ-một-ra, mức lệch bằng 0 khi trong khoảng) và khóa 18/38, CCG 0 mẫu, DFCI chỉ mẫu 42 trên dữ
+    liệu thật. `tests/test_gene_explorer.py` 51 test.
+- **Bổ sung 23/11 (vẽ lại `plot_gene_expression`):** bản cũ chia 4 ô theo phòng lab, mỗi ô 2 cột, nên 3/4 ô có một cột
+  n = 0 bỏ trống, và 44 mẫu DFCI chồng lên nhau ở mức sàn. Bản mới dùng một trục chung, chỉ vẽ nhóm có mẫu
+  (`_expression_groups`), xếp điểm kiểu beeswarm không ngẫu nhiên (`_swarm_offsets`), thêm nét đứt mức sàn
+  (log10 = 2), tên phòng lab ở trên, nền xám chỉ cho phòng lab đủ hai lớp; tiêu đề là câu kết luận do `main()` truyền.
+  Bản Altair thêm `resolve_scale(x="independent")` để không chừa cột n = 0. `tests/test_viz_gene.py` 16 test.
+
+## ADR-053 — Khám phá gen: các yếu tố ngoài ALL/AML (nhóm con, giới tính, phòng lab, độ tinh khiết mẫu)
+- **Ngày:** 23/11/2026 · **Người quyết định:** TV4 (công việc 2.2, tuần 3)
+- **Bối cảnh:** các hàm trước chỉ hỏi "gen có khác giữa ALL và AML không, có do phòng lab không". Biểu hiện gen
+  còn chịu ảnh hưởng của nhóm con, giới tính, nơi lấy mẫu và thành phần tế bào trong mẫu. Bốn hàm mới trong
+  `src/gene_explorer.py`, đều chỉ mô tả và cảnh báo, không sửa dữ liệu:
+  - `subtype_check()`: với 50 gen dấu ấn, so B-ALL − AML và T-ALL − AML (72 mẫu); nhãn `Cả B-ALL và T-ALL` /
+    `Chỉ B-ALL` / `Chỉ T-ALL` / `Không rõ` theo dấu và ngưỡng `MIN_DIFF_LOG10`. **Kết quả: 45/50 đúng cho cả hai;
+    5 gen chỉ đúng với B-ALL (IGB, IRF2, TCL1, CD19, CD24)**. Ví dụ IGB (hạng 19): B-ALL 3,15, T-ALL 2,00 (cả 9 mẫu ở
+    mức sàn), AML 2,04, tức dùng IGB thì T-ALL trông như AML. Không kiểm định vì T-ALL chỉ có 9 mẫu.
+  - `sex_check()`: gen RPS4Y trên NST Y (`M58459_at`) tách giới tính (nữ ≤ 2,22, nam ≥ 2,61 trên mẫu có ghi);
+    ngưỡng `SEX_Y_THRESHOLD = 2,4`. **Khớp 47/49 mẫu có ghi; 23 mẫu không ghi (cả 15 mẫu CALGB) suy ra 12 nữ, 11
+    nam; 2 mẫu lệch:** mẫu 18 ghi nữ nhưng gen Y = 3,32 (nhiều khả năng ghi nhầm); mẫu 60 (AML) ghi nam nhưng gen Y ở
+    mức sàn, có thể ghi nhầm hoặc mất NST Y (bất thường gặp ở bệnh bạch cầu), nên chỉ ghi "cần kiểm tra lại".
+    XIST chồng lấn giữa hai giới nên chỉ để tham khảo. Không sửa `samples` (metadata là việc của TV2).
+  - `lab_effect(subtype)`: trong cùng một nhóm bệnh, gen nào khác theo phòng lab (Welch cho 2 lab, ANOVA cho ≥ 3 lab;
+    BH trên 3541 gen). **AML (CALGB 15, St-Jude 5, CCG 5): 68 gen, 2 gen dấu ấn (IRF2, RB1). B-ALL (DFCI 35,
+    St-Jude 3): 328 gen, 7 gen dấu ấn**, trung vị chênh 0,25 log10. Phòng lab còn gộp tuổi (CCG là AML trẻ em,
+    CALGB người lớn) và tỉ lệ tủy/máu, nên chỉ nói "khác theo nơi lấy mẫu".
+  - `purity_check()`: điểm bạch cầu hạt = trung bình 5 gen hạt (DEFA1, DEFA4, LTF, ELANE, LCN2; tương quan
+    0,4–0,9). Phát hiện từ `lab_effect`: gen khác nhiều nhất giữa B-ALL DFCI và St-Jude là DEFA1 (1,73 log10), một gen
+    của bạch cầu trung tính bình thường. **4 mẫu kiểm tra vượt mức cao nhất của 38 mẫu huấn luyện (3,16): 60, 43, 59,
+    56 (3 St-Jude, 1 DFCI)**; cả 3 B-ALL của St-Jude đều cao. Gen dấu ấn AML **ELA2 (hạng 8) tương quan 0,91** với
+    điểm này trong nhóm ALL: ở mẫu kém tinh khiết, ELA2 cao lên vì tế bào bình thường chứ không vì bệnh. Không có
+    mẫu ALL huấn luyện nào vượt 2,7, trong khi 5/20 mẫu ALL kiểm tra vượt: tập kiểm tra khác tập huấn luyện về thành
+    phần tế bào. Đối chiếu PS của TV1 (`golub_ps.csv`): tương quan Spearman −0,15 (p = 0,54) ở ALL kiểm tra, chưa
+    thấy ảnh hưởng rõ đến độ tin cậy của mô hình.
+  - Kiểm tra thêm, không thành hàm: trong 50 gen dấu ấn chỉ TCF3 và CD19 có probe thứ hai trong bảng xếp hạng, cả hai
+    probe cùng chiều.
+- **Hình** (`src/viz_gene.py`, `python -m src.viz_gene`): `gene_expression_IGB` (`plot_gene_expression` thêm
+  `facet="subtype"`), `gene_sex_check` (`plot_sex_check`, `sex_check_chart`; không dùng màu lớp để khỏi nhầm với
+  ALL/AML), `gene_purity` (`plot_gene_expression(purity_check(), ..., ref_line=...)`, tham số mới `ylabel`, `ref_line`).
+- **Ranh giới:** sửa metadata giới tính và đưa cảnh báo độ tinh khiết lên màn hình Chất lượng dữ liệu là việc của TV2;
+  TV4 cung cấp hàm phát hiện. Phân tích riêng mẫu đoán sai là của TV1.
+- **Kiểm tra:** dữ liệu giả có gen kiểu B-ALL, gen giới tính (một mẫu ghi nhầm, ba mẫu thiếu), gen theo phòng lab và hai
+  mẫu lẫn bạch cầu hạt; khóa các con số trên dữ liệu thật. `tests/test_gene_explorer.py` 58 test, `tests/test_viz_gene.py`
+  19 test; toàn repo 225 test đạt.
+- **Khám phá thêm 23/11 (ghi nhận, không thành hàm):**
+  - *Gen chỉ đúng với B-ALL và mô hình Golub (TV1):* mô hình `GolubWeightedVoting(n_genes=50)` (tái lập đúng
+    `golub_ps.csv` trên tầng curated, bỏ probe AFFX) chọn đúng 5 gen IGB, IRF2, TCL1, CD19, CD24 trong 25 gen phía ALL.
+    Với mẫu T-ALL, cả 5 gen bỏ phiếu AML (mẫu 67: mỗi gen −0,55 đến −0,69). Bỏ 5 gen này khỏi dữ liệu rồi chạy lại
+    LOOCV trên 38 mẫu: **PS của cả 8/8 mẫu T-ALL tăng** (trung vị 0,61 → 0,70; Wilcoxon cặp p = 0,0078, mức nhỏ nhất có
+    thể với 8 cặp), B-ALL và AML gần như không đổi (0,80 → 0,79; 0,68 → 0,67). Đổi lại, mẫu AML 32 vốn sát ngưỡng
+    (PS 0,307) xuống 0,202 thành "uncertain", nên LOOCV đúng 36 → 35. Tập kiểm tra: vẫn 32 đúng, 1 uncertain; mẫu
+    T-ALL 67 tăng PS 0,12 → 0,15, vẫn uncertain, vì các gen phía AML (Zyxin, ...) cũng bầu AML. Kết luận: nhóm con
+    là một nguồn làm mô hình kém chắc chắn với T-ALL; có đánh đổi nên chỉ là **đề xuất cho TV1**, TV4 không sửa mô hình.
+    Chạy lại: `loocv(X.drop(columns=[M89957_at, X15949_at, X82240_rna1_at, M28170_at, L33930_s_at]).loc[train], y)`.
+  - *Tủy so với máu trong cùng một lab* (B-ALL DFCI, 30 BM, 5 PB): chỉ 19/3541 gen khác (q < 0,05), 1 gen dấu ấn
+    (`M94633_at`). Trong các gen đứng đầu, cao hơn ở máu, có gen phản ứng nhanh với stress (JUNB, MCL1), gợi ý một phần khác
+    biệt đến từ cách xử lý mẫu; chỉ 5 mẫu PB nên chỉ ghi nhận.
+  - *Lẫn hồng cầu:* chip không có probe đo được gen hemoglobin chính (HBG2 ở mức sàn mọi mẫu), không kiểm tra được.
+  - *Giới tính và gen dấu ấn:* tương quan lớn nhất giữa gen dấu ấn và gen Y là 0,41; gen dấu ấn không đi theo giới tính.
+- **Bổ sung 25/11 (`subtype_contrast`, tín hiệu T-ALL/B-ALL):** mục 3.2 (TV5) kết luận phân cụm không tách được T-ALL.
+  Hàm mới so 9 T-ALL với 38 B-ALL bằng SNR trên 3541 gen, xáo nhãn T/B 400 lần (seed `RANDOM_SEED`): **|SNR| > 1 có
+  72 gen, xáo nhãn tối đa 2; |SNR| > 1,5 có 23 gen, xáo nhãn 0**. Gen đầu bảng là dấu ấn dòng T (CD3 delta, LCK, TCF7,
+  CD7, CD3G, CD3 epsilon) và dòng B (IGB, TCL1, CD9, HLA-DR, CD24). CD3D nằm hạng 447 trong bảng ALL/AML vì chỉ cao ở
+  9/47 mẫu ALL. Kết luận: tín hiệu T/B có thật; phân cụm không tách được vì nhóm quá nhỏ, không phải thiếu tín hiệu.
+  Hình mới `gene_expression_CD3D`. Thêm 1 test dữ liệu giả và khóa 444/72/23 trên dữ liệu thật.
+- **Bổ sung 25/11 (`marker_stability`, `marker_correlation`):**
+  - *Độ ổn định:* bootstrap 100 lần 38 mẫu train (giữ 27/11, seed `RANDOM_SEED`), chọn lại 25 + 25 gen. **Jaccard
+    trung bình với danh sách gốc 0,36**; chỉ 5/50 gen được chọn lại ≥ 80% (Zyxin, CST3, c-myb, LTC4S, TCF3), 11/50 dưới
+    30%. Gen ngoài danh sách hay được chọn: CD22, PFC, PPBP, CD36, MCM3. Việc chọn gen ổn định từng là F7 của TV4 ở kế
+    hoạch cũ, đã bỏ khỏi kế hoạch mới và không ai làm.
+  - *Tương quan:* trên 38 mẫu train, 50 gen có |r| trung bình 0,52, PC1 54%, **khoảng 3 tín hiệu độc lập**
+    (participation ratio); trong ALL khoảng 11, trong AML khoảng 9. Nhóm gen trong cùng lớp (1 − r, average, cắt 0,5):
+    nhóm tế bào B (IGB, TCL1, CD79A, CD24, Ig lambda; r = 0,75) theo nhóm con; nhóm hạt bạch cầu trong AML (adipsin,
+    ELA2, azurocidin, GST; r = 0,62) tương quan 0,74 với điểm bạch cầu hạt; nhóm IL-8 (2 probe IL-8, ADM, PTX3) ở cả hai
+    lớp, theo phòng lab: trong B-ALL q = 0,002, trong AML chênh khoảng 1 log10 nhưng q ≈ 0,19 sau FDR.
+  - *Ranh giới:* hình F05 (TV5, mục 3.2) đã phân cụm 50 gen này trên 72 mẫu nhưng chỉ diễn giải theo mẫu; TV4 xét
+    tương quan trong cùng một lớp, không vẽ lại bản đồ nhiệt, không đặt tên chức năng cho nhóm (việc chú giải của TV5).
+  - Thêm 2 test dữ liệu giả, khóa n_stable = 5, Jaccard 0,36, khoảng 3,2 tín hiệu trên dữ liệu thật.
+- **Trả lời rà soát rò rỉ của TV2 (`docs/leakage_review.md` mục 3.5, 25/11): đã lọc lại.** `notebooks/04_de_genes.ipynb` không đọc `X_log10_filtered.parquet` (lọc trên 72 mẫu) nữa mà đọc `X_log10` rồi lọc bằng `GeneFilter().fit(X[train])`: 3052 probe, bỏ 20 probe AFFX, còn **3032 gen** (không còn gen hằng số). Tầng `X_log10_filtered` của nhóm giữ nguyên. Số liệu mới so với bản cũ (3541 gen): |SNR| > 0,5 có 640 gen (cũ 685), dải 1% của xáo nhãn 178 (cũ 209), 0/400; q < 0,05 có 607 gen (cũ 627); St-Jude 46/50 cùng dấu, 42 giữ chiều, 0 đảo chiều, 8 quá nhỏ (cũ 41/0/9), p = 2/56; 22/39 gen Golub trùng. **48/50 gen dấu ấn giữ nguyên**: CD19 và thrombospondin không qua bộ lọc trên train, thay bằng TdT (hạng 61) và CD36 (hạng 37). Vì vậy `subtype_check` còn 4 gen chỉ đúng với B-ALL (IGB, IRF2, TCL1, CD24); mô hình Golub của TV1 không dùng bảng xếp hạng nên vẫn chọn cả CD19, phân tích LOOCV (5 gen) không đổi. Các con số khác của ADR này cập nhật trong báo cáo 3.3, 4.x, `TV4_sau_cau_hoi.md` và handover 2.2; con số ở các mục bổ sung phía trên là tại thời điểm viết. Lưu ý mục 3.4 của rà soát: `batch_anomalies` đã chỉ dùng 38 mẫu train làm khoảng tham chiếu.
 
 ## ADR-040 — Lược đồ kho DuckDB `golub.duckdb` (công việc 2.3, bản 1)
 - **Ngày:** 15/11/2026 · **Người quyết định:** TV3 (theo ADR-014 và *Kế hoạch giai đoạn 2 (hướng mới)*)
@@ -374,6 +464,11 @@ tái lập được và truy ngược về nguồn.
 | 09/11/2026 | Đổi hướng giai đoạn 2 sang quản trị dữ liệu và dashboard; dựng khung file, lệnh `make`, giữ trước số ADR | ADR-014 | TV1 |
 | 01/11/2026 | 2.2: `src/features.py` bản 1 — 6 bộ chọn gen + `make_selector`, luôn đúng k gen, snr/ttest cân bằng hai phía | ADR-050 | TV4 |
 | 12/11/2026 | 2.2 đổi sang Khám phá gen theo kế hoạch mới: `src/gene_explorer.py`, thay thế ADR-050; schema `gene_annotations.csv` cho TV5 | ADR-051 | TV4 |
+| 23/11/2026 | 2.2 tuần 3: `batch_anomalies` thêm mức nền bỏ-một-ra (18/38 mẫu train cũng bị gắn cờ) và cột `notable` (> 1,85 SD); CCG không còn mẫu đáng chú ý, chỉ mẫu 42 | ADR-052 | TV4 |
+| 23/11/2026 | 2.2: yếu tố ngoài ALL/AML: `subtype_check` (5 gen chỉ đúng với B-ALL, ví dụ IGB), `sex_check` (khớp 47/49, 2 mẫu lệch, 23 thiếu), `lab_effect`, `purity_check` (4 mẫu kiểm tra lẫn bạch cầu hạt; ELA2 đi theo) | ADR-053 | TV4 |
+| 25/11/2026 | 2.2: `subtype_contrast`: T-ALL/B-ALL có 72 gen \|SNR\| > 1 (xáo nhãn tối đa 2); hình CD3D | ADR-053 | TV4 |
+| 25/11/2026 | 2.2: `marker_stability` (Jaccard 0,36, 5/50 gen ổn định), `marker_correlation` (khoảng 3 tín hiệu độc lập; nhóm tế bào B, hạt bạch cầu, IL-8) | ADR-053 | TV4 |
+| 25/11/2026 | 1.6/2.2: lọc gen của `gene_ranking.csv` học trên 38 mẫu train (trả lời rà soát rò rỉ TV2): 3032 gen, 607 gen q < 0,05, 48/50 gen dấu ấn giữ nguyên | ADR-053 | TV4 |
 | 12/11/2026 | 2.4: `src/ingest.py` theo giao diện ADR-014 — 4 lô theo nguồn, chặn lô lỗi, nhật ký, `validate_new_sample(path)`; tách `quality.sample_qc()` dùng chung | ADR-030 | TV2 |
 | 15/11/2026 | 2.1: Golub weighted voting chuẩn hóa z-score theo train, SD chia n − 1, n lẻ báo lỗi, PS < 0,3 là uncertain | ADR-020 | TV1 |
 | 23/11/2026 | 2.1 tuần 2: `loocv()` (36/36 khớp bài báo), test 33 chắc chắn / 32 đúng (sửa số cộng nhầm 32/31), `patient_profile()` | ADR-020 | TV1 |

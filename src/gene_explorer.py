@@ -23,6 +23,10 @@ Ba nhóm hàm:
     Xếp hạng, lô mới  : ranking_table, collapse_by_symbol, annotate,
                         marker_consistency (lô có nhãn: gen dấu ấn có giữ chiều không),
                         batch_anomalies (lô chưa nhãn: mẫu nào có gen dấu ấn ngoài khoảng tham chiếu)
+    Yếu tố khác       : subtype_check (gen chỉ đúng với B-ALL?), subtype_contrast (gen phân biệt T-ALL/B-ALL),
+                        sex_check (giới tính theo gen Y),
+                        marker_stability (bootstrap danh sách gen dấu ấn), marker_correlation (nhóm gen cùng biến động),
+                        lab_effect (cùng nhóm bệnh, khác theo phòng lab), purity_check (mẫu lẫn bạch cầu hạt)
 Quy ước chống rò rỉ: gen dấu ấn và khoảng tham chiếu chỉ lấy từ 38 mẫu huấn luyện; lô mới chỉ dùng
 để kiểm chứng, không dùng để xếp hạng lại hay chọn gen.
 
@@ -42,6 +46,7 @@ Cách dùng:
     ge.gene_reliability("M23197_at"); ge.robustness("M23197_at")
     ge.marker_consistency(source="St-Jude")      # 46/50 gen dấu ấn giữ đúng chiều
     ge.batch_anomalies(source="CCG")
+    ge.subtype_check(); ge.sex_check(); ge.lab_effect("AML"); ge.purity_check()
 
 Chạy trực tiếp: python -m src.gene_explorer  (in ra một tra cứu mẫu)
 """
@@ -80,6 +85,16 @@ MIN_DIFF_LOG10 = 0.1                     # chênh lệch nhỏ hơn mức này (
 CONSISTENCY_STATUS = ("Giữ chiều", "Đảo chiều", "Chênh lệch nhỏ", "Không so được")
 PERM_EXACT_MAX = 5000                    # số cách xếp nhãn trong lô ≤ mức này thì duyệt hết (St-Jude: C(8,3) = 56)
 N_PERM_RANDOM = 2000                     # lô lớn hơn: xáo nhãn ngẫu nhiên chừng này lần
+BASELINE_QUANTILE = 0.95                 # batch_anomalies: mức lệch đáng chú ý = phân vị 95% của mẫu train bỏ-một-ra
+SUBTYPE_PATTERNS = ("Cả B-ALL và T-ALL", "Chỉ B-ALL", "Chỉ T-ALL", "Không rõ")
+SEX_Y_PROBE = "M58459_at"                # RPS4Y (NST Y): nữ ≤ 2,22, nam ≥ 2,61 trên các mẫu có ghi giới tính
+SEX_XIST_PROBE = "X56199_at"             # XIST (bật ở nữ): hai giới chồng lấn nhiều, chỉ để tham khảo
+SEX_Y_THRESHOLD = 2.4                    # log10; giữa khoảng trống 2,22–2,61 của gen Y
+LAB_Q = 0.05                             # lab_effect: ngưỡng q (Benjamini–Hochberg)
+GRANULOCYTE_PROBES = {                   # gen hạt của bạch cầu hạt bình thường (không phải tế bào ung thư)
+    "M26602_at": "DEFA1", "X65977_at": "DEFA4", "X53961_at": "LTF",
+    "M20203_s_at": "ELANE", "S75256_s_at": "LCN2",
+}
 CLASSES = ("ALL", "AML")
 
 RANKING_NOTE = "Xếp hạng tính trên 38 mẫu huấn luyện, chỉ dùng để khám phá"
@@ -536,7 +551,7 @@ def marker_consistency(source: str | None = None, sample_ids=None, n_per_side: i
     (thường do cả hai lớp ở gần mức sàn, không nói được chiều); "Không so được" khi lô thiếu một lớp.
     df.attrs: n_ALL, n_AML (số mẫu của lô), n_genes, n_same (cùng dấu), n_kept, n_flipped, n_small,
     p_perm, n_perm (kiểm định hoán vị trong lô cho n_same; NaN và 0 khi không so được), comparable, note.
-    Ví dụ: marker_consistency(source="St-Jude") -> 46/50 cùng dấu; 41 giữ chiều rõ, 0 đảo chiều rõ.
+    Ví dụ: marker_consistency(source="St-Jude") -> 46/50 cùng dấu; 42 giữ chiều rõ, 0 đảo chiều rõ.
     """
     X, samples = _load_expression()
     batch = _batch_index(samples, source, sample_ids, only_test)
@@ -595,14 +610,39 @@ def marker_consistency(source: str | None = None, sample_ids=None, n_per_side: i
     return out
 
 
+def _out_of_range_severity(vals: pd.DataFrame, ref: pd.DataFrame) -> pd.DataFrame:
+    """Mức lệch của từng (mẫu, gen) so với [min, max] của ref, tính bằng số SD của ref; 0 khi nằm trong khoảng."""
+    lo, hi, sd = ref.min(), ref.max(), ref.std().replace(0, np.nan)
+    gap = np.maximum(vals.sub(hi, axis=1), -vals.sub(lo, axis=1)).clip(lower=0)
+    return gap.div(sd, axis=1).fillna(0.0)
+
+
+def _reference_baseline(ref: pd.DataFrame) -> dict:
+    """Mẫu tham chiếu bình thường bị gắn cờ bao nhiêu? Bỏ từng mẫu train ra, so với các mẫu còn lại.
+
+    Với 50 gen, riêng do ngẫu nhiên một mẫu mới đã có xác suất khoảng 2/39 vượt khoảng ở mỗi gen, nên
+    "có ít nhất một gen ngoài khoảng" là chuyện thường. Trả về tỉ lệ mẫu bị gắn cờ và ngưỡng mức lệch
+    đáng chú ý (phân vị BASELINE_QUANTILE của mức lệch lớn nhất mỗi mẫu).
+    """
+    worst = np.array([_out_of_range_severity(ref.loc[[i]], ref.drop(index=i)).iloc[0].max()
+                      for i in ref.index])
+    return {"n_flagged": int((worst > 0).sum()), "n": len(worst),
+            "cutoff": float(np.quantile(worst, BASELINE_QUANTILE))}
+
+
 def batch_anomalies(source: str | None = None, sample_ids=None, n_per_side: int = 25,
                     only_test: bool = True) -> pd.DataFrame:
     """Lô mới CHƯA có chẩn đoán: mẫu nào có gen dấu ấn nằm ngoài khoảng của mọi mẫu tham chiếu.
 
     Khoảng tham chiếu của mỗi gen là [min, max] trên 38 mẫu huấn luyện (gộp ALL và AML). Không dùng nhãn của
     lô mới. Mức lệch (severity) = khoảng vượt ra ngoài / độ lệch chuẩn của gen trên tập huấn luyện.
-    Cột: sample_id, source, tissue, probe_id, gene_symbol, value, ref_min, ref_max, side, severity, reason;
-    sắp mức lệch giảm dần. Bảng rỗng nghĩa là không mẫu nào lệch khỏi tham chiếu ở các gen dấu ấn.
+
+    Mức nền: bỏ từng mẫu train ra và so với 37 mẫu còn lại; trên dữ liệu thật 18/38 mẫu bình thường cũng có
+    gen ngoài khoảng. Vì vậy chỉ trường hợp có severity vượt ngưỡng của mẫu train (phân vị 95%) mới gắn
+    notable = True. attrs: baseline_flagged, baseline_n, severity_cutoff, n_notable_samples, note.
+
+    Cột: sample_id, source, tissue, probe_id, gene_symbol, value, ref_min, ref_max, side, severity, notable,
+    reason; sắp mức lệch giảm dần. Bảng rỗng nghĩa là không mẫu nào lệch khỏi tham chiếu ở các gen dấu ấn.
     Đây là kiểm tra mức gen cho nhà nghiên cứu; kiểm tra định dạng và chất lượng chip là việc của TV2 (2.4).
     """
     X, samples = _load_expression()
@@ -612,6 +652,7 @@ def batch_anomalies(source: str | None = None, sample_ids=None, n_per_side: int 
     train = samples.index[samples["split"].eq("train")]
     ref = X.loc[train, genes.index]
     lo, hi, sd = ref.min(), ref.max(), ref.std().replace(0, np.nan)
+    base = _reference_baseline(ref)
     vals = X.loc[batch, genes.index]
     below, above = vals.lt(lo, axis=1), vals.gt(hi, axis=1)
     rows = []
@@ -633,12 +674,410 @@ def batch_anomalies(source: str | None = None, sample_ids=None, n_per_side: int 
                            f"({v:.2f} so với {'min' if side == 'thấp hơn' else 'max'} {bound:.2f})"),
             })
     cols = ["sample_id", "source", "tissue", "probe_id", "gene_symbol", "value", "ref_min", "ref_max",
-            "side", "severity", "reason"]
-    out = pd.DataFrame(rows, columns=cols)
-    out = out.sort_values("severity", ascending=False).reset_index(drop=True)
+            "side", "severity", "notable", "reason"]
+    out = pd.DataFrame(rows, columns=[c for c in cols if c != "notable"])
+    out["notable"] = out["severity"].gt(base["cutoff"]).astype(bool)
+    out = out[cols].sort_values("severity", ascending=False).reset_index(drop=True)
     n_samples = out["sample_id"].nunique()
-    out.attrs["note"] = (f"{n_samples}/{len(batch)} mẫu có ít nhất một gen dấu ấn ngoài khoảng tham chiếu "
-                         f"(tổng {len(out)} trường hợp, xét {len(genes)} gen).")
+    notable_ids = sorted(out.loc[out["notable"], "sample_id"].unique().tolist())
+    pct = round(100 * base["n_flagged"] / base["n"]) if base["n"] else 0
+    verdict = (f"Mẫu có mức lệch vượt ngưỡng đó: {', '.join(map(str, notable_ids))}." if notable_ids
+               else "Không mẫu nào vượt ngưỡng đó, tức lô không khác mẫu tham chiếu hơn mức thường gặp.")
+    out.attrs.update(
+        baseline_flagged=base["n_flagged"], baseline_n=base["n"], severity_cutoff=base["cutoff"],
+        n_notable_samples=len(notable_ids),
+        note=(f"{n_samples}/{len(batch)} mẫu có ít nhất một gen dấu ấn ngoài khoảng tham chiếu "
+              f"(tổng {len(out)} trường hợp, xét {len(genes)} gen). Mức nền: bỏ từng mẫu huấn luyện ra so với "
+              f"các mẫu còn lại thì {base['n_flagged']}/{base['n']} mẫu ({pct}%) cũng bị như vậy, nên chỉ mức "
+              f"lệch trên {base['cutoff']:.2f} SD (phân vị {round(100 * BASELINE_QUANTILE)}% của mẫu huấn "
+              f"luyện) mới đáng chú ý. {verdict}"))
+    return out
+
+
+# ---------------------------------------------------------------- yếu tố khác ngoài ALL/AML
+
+def subtype_check(n_per_side: int = 25, probes=None) -> pd.DataFrame:
+    """Gen dấu ấn đúng cho cả B-ALL và T-ALL, hay chỉ cho một nhóm con?
+
+    Nhóm ALL gồm 38 B-ALL và 9 T-ALL (72 mẫu). Một gen "cao ở ALL" trên bảng xếp hạng có thể chỉ là gen
+    của tế bào B (ví dụ IGB): T-ALL không biểu hiện, nên dùng gen đó thì T-ALL trông như AML.
+    Với mỗi gen (mặc định 25 + 25 gen dấu ấn; hoặc probes=[...]): diff_B = B-ALL − AML, diff_T = T-ALL − AML
+    trên 72 mẫu. Một nhóm con "giữ" khi cùng dấu với tập huấn luyện và |diff| ≥ MIN_DIFF_LOG10.
+    Cột: rank, probe_id, gene_symbol, direction, train_diff, diff_B, diff_T, mean_B, mean_T, mean_AML,
+    pct_floor_T, pattern. Chỉ mô tả, không kiểm định (T-ALL chỉ có 9 mẫu).
+    """
+    X, samples = _load_expression()
+    genes = _marker_genes(n_per_side) if probes is None else _probe_frame(probes, X)
+    genes = genes[genes["probe_id"].isin(X.columns)]
+    sub = samples["subtype"]
+    groups = {"B": sub.eq("B-ALL"), "T": sub.eq("T-ALL"), "AML": samples["class"].eq("AML")}
+    train = samples["split"].eq("train")
+    rows = []
+    for _, g in genes.iterrows():
+        v = X[g["probe_id"]]
+        tr_diff = v[train & samples["class"].eq("ALL")].mean() - v[train & samples["class"].eq("AML")].mean()
+        means = {k: v[m].mean() for k, m in groups.items()}
+        d_b, d_t = means["B"] - means["AML"], means["T"] - means["AML"]
+        hold_b = np.sign(d_b) == np.sign(tr_diff) and abs(d_b) >= MIN_DIFF_LOG10
+        hold_t = np.sign(d_t) == np.sign(tr_diff) and abs(d_t) >= MIN_DIFF_LOG10
+        pattern = SUBTYPE_PATTERNS[0 if hold_b and hold_t else 1 if hold_b else 2 if hold_t else 3]
+        rows.append({"rank": g.get("rank"), "probe_id": g["probe_id"], "gene_symbol": g.get("gene_symbol", ""),
+                     "direction": "ALL" if tr_diff > 0 else "AML", "train_diff": tr_diff,
+                     "diff_B": d_b, "diff_T": d_t, "mean_B": means["B"], "mean_T": means["T"],
+                     "mean_AML": means["AML"],
+                     "pct_floor_T": float((v[groups["T"]] <= FLOOR_LOG10 + 1e-9).mean()), "pattern": pattern})
+    out = pd.DataFrame(rows)
+    counts = out["pattern"].value_counts()
+    only_b = out.loc[out["pattern"].eq("Chỉ B-ALL")]
+    names = ", ".join((only_b["gene_symbol"].where(~_is_blank(only_b["gene_symbol"]), only_b["probe_id"])))
+    out.attrs.update(
+        counts={p: int(counts.get(p, 0)) for p in SUBTYPE_PATTERNS},
+        n_B=int(groups["B"].sum()), n_T=int(groups["T"].sum()), n_AML=int(groups["AML"].sum()),
+        note=(f"{counts.get(SUBTYPE_PATTERNS[0], 0)}/{len(out)} gen đúng cho cả B-ALL và T-ALL. "
+              + (f"{len(only_b)} gen chỉ đúng với B-ALL ({names}): với T-ALL các gen này gần như AML, "
+                 "nên không dùng riêng chúng để phân biệt T-ALL với AML." if len(only_b)
+                 else "Không gen nào chỉ đúng với B-ALL.")))
+    return out
+
+
+def subtype_contrast(n_perm: int = 400, thresholds=(0.5, 1.0, 1.5)) -> pd.DataFrame:
+    """Trong nhóm ALL, gen nào phân biệt T-ALL với B-ALL? Có nhiều hơn mức ngẫu nhiên không?
+
+    SNR = (μ_T − μ_B) / (σ_T + σ_B) trên 47 mẫu ALL (9 T-ALL, 38 B-ALL), cho các gen của bảng xếp hạng;
+    dương là cao ở T-ALL. Neighborhood analysis như Golub: xáo nhãn T/B n_perm lần (giữ 9/38, seed cố định),
+    đếm số gen vượt từng ngưỡng |SNR|. Chỉ mô tả (dùng cả tập kiểm tra, không chọn gen cho mô hình).
+    Cột: probe_id, gene_symbol, description, snr, mean_T, mean_B; sắp |snr| giảm dần.
+    attrs: n_T, n_B, thresholds (danh sách {threshold, observed, perm_p99, perm_max}), note.
+    """
+    X, samples = _load_expression()
+    is_all = samples["class"].eq("ALL")
+    is_t = samples.loc[is_all, "subtype"].eq("T-ALL").to_numpy()
+    if is_t.sum() < MIN_N_PER_GROUP or (~is_t).sum() < MIN_N_PER_GROUP:
+        raise ValueError(f"Cần ít nhất {MIN_N_PER_GROUP} mẫu T-ALL và B-ALL")
+    rank = _load_ranking()
+    probes = [p for p in rank["probe_id"] if p in X.columns]
+    A = X.loc[is_all, probes].to_numpy(dtype=float)
+
+    def snr(lab):
+        a, b = A[lab], A[~lab]
+        den = a.std(axis=0, ddof=1) + b.std(axis=0, ddof=1)
+        return np.divide(a.mean(axis=0) - b.mean(axis=0), den, out=np.zeros(A.shape[1]), where=den > 0)
+
+    real = snr(is_t)
+    rng = np.random.default_rng(RANDOM_SEED)
+    perm = np.array([np.abs(snr(rng.permutation(is_t))) for _ in range(n_perm)])
+    table = []
+    for th in thresholds:
+        counts = (perm > th).sum(axis=1)
+        table.append({"threshold": th, "observed": int((np.abs(real) > th).sum()),
+                      "perm_p99": int(np.quantile(counts, 0.99)), "perm_max": int(counts.max())})
+    desc = _load_genes().set_index("probe_id")["description"]
+    sym = rank.set_index("probe_id")["gene_symbol"] if "gene_symbol" in rank else pd.Series("", index=probes)
+    out = pd.DataFrame({"probe_id": probes, "gene_symbol": sym.reindex(probes).fillna("").to_numpy(),
+                        "description": desc.reindex(probes).fillna("").to_numpy(), "snr": real,
+                        "mean_T": A[is_t].mean(axis=0), "mean_B": A[~is_t].mean(axis=0)})
+    out = out.reindex(out["snr"].abs().sort_values(ascending=False).index).reset_index(drop=True)
+    t1 = next((r for r in table if r["threshold"] == 1.0), table[-1])
+    out.attrs.update(
+        n_T=int(is_t.sum()), n_B=int((~is_t).sum()), thresholds=table,
+        note=(f"T-ALL ({int(is_t.sum())}) so với B-ALL ({int((~is_t).sum())}): {t1['observed']} gen có |SNR| > "
+              f"{t1['threshold']:g}, trong khi {n_perm} lần xáo nhãn cho nhiều nhất {t1['perm_max']} gen. "
+              "Tín hiệu phân biệt T/B có thật, nhưng chỉ ở 9 mẫu nên dễ bị lấn át khi phân cụm toàn bộ gen."))
+    return out
+
+
+def _marker_label(genes: pd.DataFrame) -> pd.Series:
+    sym = genes["gene_symbol"] if "gene_symbol" in genes else pd.Series("", index=genes.index)
+    return sym.where(~_is_blank(sym), genes["probe_id"])
+
+
+def marker_stability(n_boot: int = 100, n_per_side: int = 25) -> pd.DataFrame:
+    """Danh sách gen dấu ấn có ổn định không khi đổi mẫu huấn luyện? (bootstrap trên 38 mẫu train)
+
+    Mỗi lần lấy lại mẫu có hoàn lại trong từng lớp (giữ 27 ALL, 11 AML), tính lại SNR trên các gen của bảng
+    xếp hạng và chọn lại n_per_side gen mỗi phía. freq = tỉ lệ lần một gen dấu ấn gốc được chọn lại.
+    Cột: rank, probe_id, gene_symbol, direction, freq; sắp freq giảm dần.
+    attrs: mean_jaccard, min_jaccard (giữa danh sách bootstrap và danh sách gốc), n_stable (freq ≥ 0,8),
+    n_unstable (freq < 0,3), frequent_outsiders (gen ngoài danh sách gốc hay được chọn), note.
+    """
+    X, samples = _load_expression()
+    rank = _load_ranking()
+    probes = [p for p in rank["probe_id"] if p in X.columns]
+    train = samples.index[samples["split"].eq("train")]
+    A = X.loc[train, probes].to_numpy(dtype=float)
+    is_all = samples.loc[train, "class"].eq("ALL").to_numpy()
+
+    def chosen(idx):
+        a, b = A[idx][is_all[idx]], A[idx][~is_all[idx]]
+        den = a.std(axis=0, ddof=1) + b.std(axis=0, ddof=1)
+        snr = np.divide(a.mean(axis=0) - b.mean(axis=0), den, out=np.zeros(A.shape[1]), where=den > 0)
+        order = np.argsort(snr)
+        return set(order[-n_per_side:]) | set(order[:n_per_side])
+
+    orig = chosen(np.arange(len(train)))
+    rng = np.random.default_rng(RANDOM_SEED)
+    ia, ib = np.where(is_all)[0], np.where(~is_all)[0]
+    count = np.zeros(len(probes))
+    jac = []
+    for _ in range(n_boot):
+        t = chosen(np.r_[rng.choice(ia, len(ia)), rng.choice(ib, len(ib))])
+        count[list(t)] += 1
+        jac.append(len(t & orig) / len(t | orig))
+    freq = count / n_boot
+    markers = _marker_genes(n_per_side)
+    markers = markers[markers["probe_id"].isin(probes)].copy()
+    pos = {p: i for i, p in enumerate(probes)}
+    markers["freq"] = [freq[pos[p]] for p in markers["probe_id"]]
+    markers["direction"] = np.where(markers["snr"] > 0, "ALL", "AML")
+    out = markers[["rank", "probe_id", "gene_symbol", "direction", "freq"]].sort_values(
+        ["freq", "rank"], ascending=[False, True]).reset_index(drop=True)
+    outside = [i for i in np.argsort(-freq) if i not in orig][:5]
+    sym = rank.set_index("probe_id")["gene_symbol"] if "gene_symbol" in rank else pd.Series("", index=probes)
+    outsiders = [{"probe_id": probes[i], "gene_symbol": sym.get(probes[i], ""), "freq": float(freq[i]),
+                  "rank": int(rank.set_index("probe_id")["rank"][probes[i]])} for i in outside]
+    stable = out[out["freq"] >= 0.8]
+    out.attrs.update(
+        mean_jaccard=float(np.mean(jac)), min_jaccard=float(np.min(jac)), n_stable=len(stable),
+        n_unstable=int((out["freq"] < 0.3).sum()), frequent_outsiders=outsiders,
+        note=(f"Qua {n_boot} lần bootstrap 38 mẫu huấn luyện, danh sách {len(out)} gen dấu ấn trùng với danh sách gốc "
+              f"trung bình Jaccard {np.mean(jac):.2f}. Chỉ {len(stable)} gen được chọn lại ở ít nhất 80% số lần ("
+              f"{', '.join(_marker_label(stable))}); {int((out['freq'] < 0.3).sum())} gen dưới 30%. Vài gen đầu bảng "
+              "ổn định, còn thành phần chính xác của danh sách phụ thuộc nhiều vào mẫu."))
+    return out
+
+
+def marker_correlation(group: str = "ALL", n_per_side: int = 25, cut: float = 0.5) -> pd.DataFrame:
+    """Tương quan giữa các gen dấu ấn và các nhóm gen cùng biến động (module).
+
+    group: "train" (38 mẫu huấn luyện, cả hai lớp), "ALL" hoặc "AML" (72 mẫu, chỉ lớp đó). Xét trong cùng một
+    lớp để bỏ phần tương quan do bệnh tạo ra. Module: phân cụm phân cấp (khoảng cách 1 − r, liên kết average),
+    cắt ở khoảng cách `cut`; chỉ giữ module từ 3 gen. Cột: module, probe_id, gene_symbol, direction, module_size,
+    module_mean_r. attrs: mean_abs_r, pc1_share, n_effective (participation ratio của trị riêng: số tín hiệu
+    độc lập ước tính), modules (danh sách tên gen mỗi module), note. Chỉ mô tả; tên chức năng của module cần
+    chú giải gen (TV5).
+    """
+    from scipy.cluster.hierarchy import fcluster, linkage
+    from scipy.spatial.distance import squareform
+
+    X, samples = _load_expression()
+    if group == "train":
+        idx = samples.index[samples["split"].eq("train")]
+    elif group in CLASSES:
+        idx = samples.index[samples["class"].eq(group)]
+    else:
+        raise ValueError(f"group phải là 'train' hoặc một trong {CLASSES}")
+    genes = _marker_genes(n_per_side)
+    genes = genes[genes["probe_id"].isin(X.columns)].reset_index(drop=True)
+    P = genes["probe_id"].tolist()
+    C = X.loc[idx, P].corr().fillna(0.0)
+    ev = np.linalg.eigvalsh(C.to_numpy())[::-1]
+    iu = np.triu_indices(len(P), 1)
+    Z = linkage(squareform((1 - C.to_numpy()).clip(min=0), checks=False), "average")
+    labels = fcluster(Z, cut, "distance")
+    genes["label"] = _marker_label(genes)
+    genes["direction"] = np.where(genes["snr"] > 0, "ALL", "AML")
+    genes["cluster"] = labels
+    rows, mods = [], []
+    for k, g in genes.groupby("cluster"):
+        if len(g) < 3:
+            continue
+        sub = C.loc[g["probe_id"], g["probe_id"]].to_numpy()
+        mean_r = float(sub[np.triu_indices(len(g), 1)].mean())
+        mods.append((len(g), mean_r, g))
+    mods.sort(key=lambda m: (-m[0], -m[1]))
+    for i, (n, r, g) in enumerate(mods, start=1):
+        for _, row in g.iterrows():
+            rows.append({"module": i, "probe_id": row["probe_id"], "gene_symbol": row.get("gene_symbol", ""),
+                         "label": row["label"], "direction": row["direction"], "module_size": n,
+                         "module_mean_r": r})
+    out = pd.DataFrame(rows, columns=["module", "probe_id", "gene_symbol", "label", "direction", "module_size",
+                                      "module_mean_r"])
+    n_eff = float(ev.sum() ** 2 / (ev ** 2).sum())
+    out.attrs.update(
+        group=group, n_samples=len(idx), mean_abs_r=float(np.abs(C.to_numpy()[iu]).mean()),
+        pc1_share=float(ev[0] / ev.sum()), n_effective=n_eff,
+        modules=[{"size": n, "mean_r": r, "genes": g["label"].tolist()} for n, r, g in mods],
+        note=(f"{group} ({len(idx)} mẫu): tương quan trung bình |r| = {np.abs(C.to_numpy()[iu]).mean():.2f} giữa "
+              f"{len(P)} gen dấu ấn, thành phần chính đầu tiên giải thích {ev[0] / ev.sum():.0%}, tương đương khoảng "
+              f"{n_eff:.0f} tín hiệu độc lập; {len(mods)} nhóm gen từ 3 gen trở lên cùng biến động."))
+    return out
+
+
+def _probe_frame(probes, X: pd.DataFrame) -> pd.DataFrame:
+    """Bảng probe tối thiểu (rank, probe_id, gene_symbol) cho danh sách probe người dùng truyền vào."""
+    probes = [probes] if isinstance(probes, str) else list(probes)
+    for p in probes:
+        _check_probe(p, X)
+    rank = _load_ranking().set_index("probe_id")
+    return pd.DataFrame({"probe_id": probes,
+                         "rank": [rank["rank"].get(p, np.nan) for p in probes],
+                         "gene_symbol": [rank["gene_symbol"].get(p, "") if "gene_symbol" in rank else ""
+                                         for p in probes]})
+
+
+def sex_check() -> pd.DataFrame:
+    """Giới tính suy từ biểu hiện gen, đối chiếu với metadata. Chỉ cảnh báo, KHÔNG sửa samples.
+
+    Gen RPS4Y (SEX_Y_PROBE) nằm trên NST Y: nam biểu hiện, nữ ở mức sàn. Trên các mẫu có ghi giới tính,
+    nữ ≤ 2,22 và nam ≥ 2,61 (trừ 2 mẫu lệch), nên ngưỡng SEX_Y_THRESHOLD = 2,4 nằm giữa khoảng trống.
+    XIST chỉ để tham khảo (hai giới chồng lấn). Cột: sample_id, source, class, sex_recorded, rps4y, xist,
+    sex_inferred, status ("Khớp" | "Lệch metadata" | "Metadata thiếu"), reason.
+    Lưu ý: mẫu ghi nam mà gen Y ở mức sàn có thể do mất NST Y, bất thường gặp ở bệnh bạch cầu;
+    vì vậy "Lệch metadata" là cần kiểm tra lại, không phải chắc chắn ghi sai.
+    """
+    X, samples = _load_expression()
+    for p in (SEX_Y_PROBE, SEX_XIST_PROBE):
+        _check_probe(p, X)
+    y, xist = X[SEX_Y_PROBE], X[SEX_XIST_PROBE]
+    inferred = pd.Series(np.where(y > SEX_Y_THRESHOLD, "M", "F"), index=samples.index)
+    rec = samples["sex"] if "sex" in samples else pd.Series(pd.NA, index=samples.index)
+    status = np.where(rec.isna(), "Metadata thiếu", np.where(rec.eq(inferred), "Khớp", "Lệch metadata"))
+    out = pd.DataFrame({"sample_id": samples.index, "source": samples["source"].to_numpy(),
+                        "class": samples["class"].to_numpy(), "sex_recorded": rec.to_numpy(),
+                        "rps4y": y.to_numpy(), "xist": xist.to_numpy(), "sex_inferred": inferred.to_numpy(),
+                        "status": status})
+    words = {"M": "nam", "F": "nữ"}
+
+    def reason(r):
+        base = f"gen Y = {r.rps4y:.2f} ({'trên' if r.sex_inferred == 'M' else 'dưới'} ngưỡng {SEX_Y_THRESHOLD})"
+        if r.status == "Metadata thiếu":
+            return f"Không ghi giới tính; {base} nên suy ra {words[r.sex_inferred]}"
+        if r.status == "Khớp":
+            return f"Ghi {words[r.sex_recorded]}, khớp ({base})"
+        extra = (" Có thể ghi nhầm, hoặc mất NST Y (gặp ở bệnh bạch cầu)." if r.sex_recorded == "M"
+                 else " Nhiều khả năng ghi nhầm.")
+        return f"Ghi {words[r.sex_recorded]} nhưng {base}, giống {words[r.sex_inferred]}.{extra}"
+
+    out["reason"] = out.apply(reason, axis=1)
+    order = {"Lệch metadata": 0, "Metadata thiếu": 1, "Khớp": 2}
+    out = out.sort_values(["status", "sample_id"], key=lambda s: s.map(order) if s.name == "status" else s)
+    out = out.reset_index(drop=True)
+    n = out["status"].value_counts()
+    known = int(n.get("Khớp", 0) + n.get("Lệch metadata", 0))
+    miss = out[out["status"].eq("Metadata thiếu")]
+    out.attrs.update(
+        n_match=int(n.get("Khớp", 0)), n_mismatch=int(n.get("Lệch metadata", 0)),
+        n_missing=int(n.get("Metadata thiếu", 0)),
+        note=(f"Gen Y khớp giới tính đã ghi ở {n.get('Khớp', 0)}/{known} mẫu. "
+              f"{n.get('Lệch metadata', 0)} mẫu lệch cần kiểm tra lại: "
+              + ", ".join(map(str, out.loc[out['status'].eq('Lệch metadata'), 'sample_id'])) + ". "
+              f"{len(miss)} mẫu không ghi giới tính, suy ra {int(miss['sex_inferred'].eq('F').sum())} nữ, "
+              f"{int(miss['sex_inferred'].eq('M').sum())} nam. Chỉ là gợi ý từ biểu hiện gen, "
+              "không sửa metadata (việc của TV2)."))
+    return out
+
+
+def _bh(p: np.ndarray) -> np.ndarray:
+    """q-value Benjamini–Hochberg (bỏ qua NaN)."""
+    p = np.asarray(p, dtype=float)
+    q = np.full_like(p, np.nan)
+    ok = ~np.isnan(p)
+    pv = p[ok]
+    m = len(pv)
+    if m == 0:
+        return q
+    order = np.argsort(pv)
+    ranked = pv[order] * m / np.arange(1, m + 1)
+    ranked = np.minimum.accumulate(ranked[::-1])[::-1]
+    res = np.empty(m)
+    res[order] = np.clip(ranked, 0, 1)
+    q[ok] = res
+    return q
+
+
+def lab_effect(subtype: str = "AML", n_per_side: int = 25) -> pd.DataFrame:
+    """Trong CÙNG một nhóm bệnh, gen nào khác nhau giữa các phòng lab? (ảnh hưởng của nơi lấy mẫu)
+
+    subtype: "AML" (CALGB, CCG, St-Jude) hoặc "B-ALL" (DFCI, St-Jude). Chỉ xét phòng lab có ≥ MIN_N_PER_GROUP
+    mẫu. Hai lab: Welch t-test; từ ba lab: ANOVA một chiều. q theo Benjamini–Hochberg trên các gen của bảng
+    xếp hạng (3032 gen). Cột: probe_id, gene_symbol, is_marker, mean_<lab>..., lab_range (lớn nhất − nhỏ
+    nhất của các trung bình), p_value, q_value; sắp theo q. attrs: labs, n_per_lab, n_sig, markers_affected.
+    Lưu ý: phòng lab còn gộp cả yếu tố khác (CCG là AML trẻ em, CALGB là người lớn; mỗi lab một tỉ lệ
+    tủy/máu), nên đây là "khác nhau theo nơi lấy mẫu", chưa tách được nguyên nhân.
+    """
+    from scipy import stats
+
+    X, samples = _load_expression()
+    if subtype not in set(samples["subtype"]):
+        raise ValueError(f"subtype phải là một trong {sorted(set(samples['subtype']))}")
+    grp = samples[samples["subtype"].eq(subtype)]
+    n_lab = grp["source"].value_counts()
+    labs = [s for s in ("DFCI", "CALGB", "St-Jude", "CCG") if n_lab.get(s, 0) >= MIN_N_PER_GROUP]
+    if len(labs) < 2:
+        raise ValueError(f"{subtype}: cần ít nhất 2 phòng lab có ≥ {MIN_N_PER_GROUP} mẫu")
+    rank = _load_ranking()
+    probes = [p for p in rank["probe_id"] if p in X.columns]
+    parts = [X.loc[grp.index[grp["source"].eq(lab)], probes] for lab in labs]
+    if len(labs) == 2:
+        _, p = stats.ttest_ind(parts[0], parts[1], equal_var=False)
+    else:
+        _, p = stats.f_oneway(*parts)
+    means = pd.DataFrame({f"mean_{lab}": part.mean() for lab, part in zip(labs, parts)})
+    markers = set(_marker_genes(n_per_side)["probe_id"])
+    sym = rank.set_index("probe_id")["gene_symbol"] if "gene_symbol" in rank else pd.Series("", index=probes)
+    out = pd.DataFrame({"probe_id": probes, "gene_symbol": sym.reindex(probes).fillna("").to_numpy(),
+                        "is_marker": [pp in markers for pp in probes]})
+    out = pd.concat([out, means.reset_index(drop=True)], axis=1)
+    out["lab_range"] = means.max(axis=1).to_numpy() - means.min(axis=1).to_numpy()
+    out["p_value"] = np.asarray(p, dtype=float)
+    out["q_value"] = _bh(out["p_value"].to_numpy())
+    out = out.sort_values(["q_value", "p_value"], na_position="last").reset_index(drop=True)
+    sig = out[out["q_value"] < LAB_Q]
+    hit = sig[sig["is_marker"]]
+    hit_names = (hit["gene_symbol"].where(~_is_blank(hit["gene_symbol"]), hit["probe_id"])).tolist()
+    out.attrs.update(
+        labs=labs, n_per_lab={lab: int(n_lab[lab]) for lab in labs}, n_sig=len(sig), n_genes=len(out),
+        markers_affected=hit["probe_id"].tolist(),
+        note=(f"{subtype}, so {' / '.join(f'{lab} ({n_lab[lab]})' for lab in labs)}: {len(sig)}/{len(out)} gen "
+              f"khác nhau theo phòng lab (q < {LAB_Q}), trung vị chênh lệch "
+              f"{sig['lab_range'].median():.2f} log10. " if len(sig) else
+              f"{subtype}: không gen nào khác nhau theo phòng lab ở q < {LAB_Q}. ")
+             + (f"Trong 50 gen dấu ấn có {len(hit)} gen bị ảnh hưởng: {', '.join(hit_names)}." if len(hit)
+                else "Không gen dấu ấn nào bị ảnh hưởng."))
+    return out
+
+
+def purity_check(n_per_side: int = 25) -> pd.DataFrame:
+    """Mẫu nào lẫn nhiều bạch cầu hạt bình thường (độ tinh khiết của mẫu)?
+
+    Điểm bạch cầu hạt = trung bình log10 của 5 gen hạt (GRANULOCYTE_PROBES: DEFA1, DEFA4, LTF, ELANE, LCN2),
+    tương quan 0,4–0,9 với nhau. Mẫu bạch cầu cấp tinh khiết gần như không có các gen này; điểm cao nghĩa
+    là mẫu lẫn tế bào tủy bình thường. Ngưỡng = điểm lớn nhất trên 38 mẫu huấn luyện (không dùng nhãn).
+    Trả về đúng dạng gene_values() (sample_id, value, class, subtype, source, tissue, split[, qc_outlier])
+    thêm cột above_train, để vẽ bằng viz_gene.plot_gene_expression. attrs: train_max, flagged, by_source,
+    tracking_markers (gen dấu ấn tương quan > 0,7 với điểm này trong nhóm ALL), note.
+    """
+    X, samples = _load_expression()
+    probes = [p for p in GRANULOCYTE_PROBES if p in X.columns]
+    if len(probes) < 3:
+        raise KeyError("Thiếu probe của gen bạch cầu hạt trong dữ liệu")
+    score = X[probes].mean(axis=1)
+    out = samples.copy()
+    out["value"] = score.reindex(out.index)
+    out.index.name = "sample_id"
+    extra = ["qc_outlier"] if "qc_outlier" in out.columns else []
+    out = out.reset_index()[["sample_id", "value", *GROUP_COLUMNS, *extra]]
+    train_max = float(out.loc[out["split"].eq("train"), "value"].max())
+    out["above_train"] = out["value"] > train_max
+    flagged = out[out["above_train"]].sort_values("value", ascending=False)
+
+    is_all = samples["class"].eq("ALL")
+    markers = _marker_genes(n_per_side)
+    markers = markers[markers["probe_id"].isin(X.columns)]
+    r = X.loc[is_all, markers["probe_id"]].corrwith(score[is_all])
+    track = markers.set_index("probe_id").loc[r.index[r > 0.7]]
+    track_names = [(s if isinstance(s, str) and s else p) for p, s in zip(track.index, track["gene_symbol"])]
+    by_src = flagged.groupby("source").size().to_dict()
+    out.attrs.update(
+        train_max=train_max, flagged=flagged["sample_id"].tolist(), by_source={k: int(v) for k, v in by_src.items()},
+        tracking_markers=track.index.tolist(),
+        note=(f"Điểm bạch cầu hạt (5 gen hạt) cao nhất ở 38 mẫu huấn luyện là {train_max:.2f}. "
+              f"{len(flagged)} mẫu kiểm tra vượt mức này"
+              + (f" ({', '.join(f'{k}: {v}' for k, v in by_src.items())})" if len(flagged) else "")
+              + ": các mẫu này lẫn nhiều tế bào tủy bình thường hơn mọi mẫu tham chiếu. "
+              + (f"Gen dấu ấn đi theo điểm này trong nhóm ALL: {', '.join(track_names)}; ở mẫu kém tinh khiết, "
+                 "gen này cao lên vì tế bào bình thường chứ không vì bệnh." if len(track_names)
+                 else "Không gen dấu ấn nào đi theo điểm này.")))
     return out
 
 
