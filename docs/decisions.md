@@ -426,7 +426,7 @@ tái lập được và truy ngược về nguồn.
      - Bảng C: Khám phá phân nhóm sâu trên mạng SOM 2×2 (4 nơ-ron, 72 mẫu), chứng minh T-ALL không tách khỏi B-ALL ở cấp độ không giám sát (ủng hộ H5 ở mức ALL/AML, bác bỏ ở mức subtype).
   2. **Fig 3A (Prediction Strength):**
      - Bảng A (LOOCV 38 mẫu): Trực quan hóa giá trị PS từ `results/metrics/golub_ps.csv` (TV1), vạch ngưỡng $PS = 0.30$, phủ dải cảnh báo "Uncertain" ($PS < 0.30$) thể chế hóa cơ chế *Human-in-the-loop*; 36/38 mẫu chắc chắn và đúng 100%, 2 mẫu rơi vào vùng không chắc chắn (#12, #35).
-     - Bảng B (Tập kiểm tra 34 mẫu): 33/34 mẫu chắc chắn, 32 đúng; làm nổi bật mẫu 66 ($PS = 0.30004$ sát ranh giới do Tumor Purity thấp); toàn bộ 5 mẫu máu ngoại vi (PB) được phân loại đúng; định vị mẫu không chắc chắn (#67).
+     - Bảng B (34 mẫu kiểm tra): 33 mẫu chắc chắn, đúng 32/33. Mẫu 66 được dự đoán thành ALL với PS = 0,30004, sát ngưỡng 0,30. Trong 10 mẫu máu ngoại vi, 9 mẫu được dự đoán đúng và mẫu 67 có nhãn `uncertain`.
   3. **F04 (hình bổ sung, phân tích lỗi Logistic Regression):**
      - Bảng A: Xác suất lớp AML do Logistic Regression ước tính. Mô hình đọc dữ liệu curated log10, fit trên 38 mẫu train và dự đoán 34 mẫu test. Ngưỡng phân loại là 0,5 và dải 0,3–0,7 dùng làm tham chiếu trực quan.
      - Bảng B: Dải kiểm định Quản trị dữ liệu (Governance Tracks) gồm Loại mô (BM vs PB) và Nguồn bệnh viện (DFCI, CALGB, CCG, St-Jude).

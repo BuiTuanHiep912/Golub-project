@@ -2,7 +2,7 @@
 
 Tái thiết kế các hình kinh điển của bài báo Golub et al. (1999) theo chuẩn trực quan hóa hiện đại:
     - Fig 2: Phân cụm không giám sát bằng Self-Organizing Maps (SOM 1x2 và 2x2), đối chiếu cấu trúc lớp và chiếu không gian biểu hiện gen.
-    - Fig 3A: (Dành riêng cho đợt tích hợp TV1) Phân bố Prediction Strength (PS) của mô hình Weighted Voting.
+    - Fig 3A: Phân bố Prediction Strength (PS) của mô hình Weighted Voting.
     - F04 (hình bổ sung của nhóm): Phân tích lỗi Logistic Regression trên tập kiểm tra độc lập theo loại mô và nguồn thu thập.
 
 Tuân thủ nghiêm ngặt Style Guide (docs/style_guide.md) và ADR-014:
@@ -21,7 +21,6 @@ Chạy trực tiếp:
 """
 from __future__ import annotations
 
-from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -33,8 +32,7 @@ from sklearn.decomposition import PCA
 
 try:
     from src.config import (
-        CLEANSED_DIR, CURATED_DIR, PALETTE, RANDOM_SEED,
-        REPORT_FIG_DIR, SLIDE_FIG_DIR
+        PROJECT_ROOT, PS_THRESHOLD, RANDOM_SEED
     )
     from src.evaluate import evaluate, _baseline_pipeline
     from src.load import load_golub
@@ -45,8 +43,7 @@ try:
     )
 except ModuleNotFoundError:
     from config import (
-        CLEANSED_DIR, CURATED_DIR, PALETTE, RANDOM_SEED,
-        REPORT_FIG_DIR, SLIDE_FIG_DIR
+        PROJECT_ROOT, PS_THRESHOLD, RANDOM_SEED
     )
     from evaluate import evaluate, _baseline_pipeline
     from load import load_golub
@@ -329,35 +326,26 @@ def plot_fig4_error_analysis(
 def plot_fig3a_prediction_strength(ps_df: pd.DataFrame | None = None, mode: str = "report") -> plt.Figure:
     """Tái thiết kế Fig 3A của Golub et al. (1999): Prediction Strength (PS) phân bổ theo lớp và tập mẫu.
 
-    Panel A: Tập huấn luyện (LOOCV - 38 mẫu), làm rõ ngưỡng PS >= 0.30 và 2 mẫu uncertain.
-    Panel B: Tập kiểm tra độc lập (34 mẫu), làm nổi bật mẫu 66 (sai biên), 5 mẫu PB và mẫu uncertain 67.
+    Hai panel trình bày PS trên LOOCV và tập kiểm tra độc lập.
     """
-    if mode not in ("report", "slide"):
-        raise ValueError(f"mode phải là 'report' hoặc 'slide', nhận được: {mode}")
-
-    if ps_df is None:
-        ps_path = Path(__file__).resolve().parent.parent / "results" / "metrics" / "golub_ps.csv"
-        if not ps_path.exists():
-            from src.config import PROJECT_ROOT
-            ps_path = PROJECT_ROOT / "results" / "metrics" / "golub_ps.csv"
-        ps_df = pd.read_csv(ps_path)
-
     rc = style_rc(mode)
+    if ps_df is None:
+        ps_df = pd.read_csv(PROJECT_ROOT / "results" / "metrics" / "golub_ps.csv")
     with plt.rc_context(rc):
         w, h = (12.5, 6.2) if mode == "report" else (14.5, 7.5)
         fig, (ax_loocv, ax_test) = plt.subplots(1, 2, figsize=(w, h), sharey=True)
 
         # Hàm vẽ cho từng panel
         def _render_panel(ax, subset_name: str, title_panel: str):
-            sub = ps_df[ps_df["set"] == subset_name].copy()
+            sub = ps_df.loc[ps_df["set"].eq(subset_name)]
 
             # Vùng bóng Uncertain (PS < 0.30)
-            ax.axhspan(-0.02, 0.30, facecolor="#FADBD8" if mode == "report" else "#F2D7D5", alpha=0.35, zorder=0)
-            ax.axhline(0.30, color="#C0392B", linestyle="--", linewidth=rc["lines.linewidth"] * 1.2,
-                       label="Ngưỡng chắc chắn (PS = 0.30)", zorder=2)
+            ax.axhspan(-0.02, PS_THRESHOLD, facecolor="#FADBD8" if mode == "report" else "#F2D7D5", alpha=0.35, zorder=0)
+            ax.axhline(PS_THRESHOLD, color="#C0392B", linestyle="--", linewidth=rc["lines.linewidth"] * 1.2,
+                       label=f"Ngưỡng PS = {PS_THRESHOLD:.2f}", zorder=2)
 
             # Text cảnh báo vùng không chắc chắn
-            ax.text(0.5, 0.15, "Vùng không chắc chắn (Uncertain, PS < 0.30)\n→ Chuyển giao bác sĩ (Human-in-the-loop)",
+            ax.text(0.5, PS_THRESHOLD / 2, f"Không chắc chắn (PS < {PS_THRESHOLD:.2f})",
                     transform=ax.get_yaxis_transform(), ha="center", va="center",
                     fontsize=rc["font.size"] - 1, color="#922B21", style="italic",
                     bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor="#E6B0AA", alpha=0.85))
@@ -367,7 +355,7 @@ def plot_fig3a_prediction_strength(ps_df: pd.DataFrame | None = None, mode: str 
             box_data = [sub[sub["true"] == c]["ps"].values for c in classes]
 
             # Boxplot mờ
-            bp = ax.boxplot(box_data, positions=positions, widths=0.35, patch_artist=True,
+            ax.boxplot(box_data, positions=positions, widths=0.35, patch_artist=True,
                             showfliers=False, zorder=1,
                             medianprops=dict(color="#2C3E50", linewidth=rc["lines.linewidth"] * 1.5),
                             boxprops=dict(facecolor="#EAECEE", edgecolor="#BDC3C7", alpha=0.6),
@@ -417,14 +405,14 @@ def plot_fig3a_prediction_strength(ps_df: pd.DataFrame | None = None, mode: str 
                                         fontsize=rc["font.size"] - 2, fontweight="bold", color="#78281F",
                                         arrowprops=dict(arrowstyle="->", color="#78281F", lw=1.0))
                     elif subset_name == "test":
-                        if sample_id == 66:  # Ca sai duy nhất
-                            ax.annotate(f"Mẫu 66: Sai duy nhất (AML→ALL)\nPS = {ps_val:.4f} (sát ngưỡng)\nTumor Purity thấp",
+                        if sample_id == 66 and pred not in (c, "uncertain"):
+                            ax.annotate(f"Mẫu {sample_id}: {c} → {pred}\nPS = {ps_val:.5f}",
                                         xy=(x_pos, ps_val), xytext=(x_pos - 0.45, ps_val + 0.14),
                                         fontsize=rc["font.size"] - 1, fontweight="bold", color="#C0392B",
                                         bbox=dict(boxstyle="round,pad=0.3", facecolor="#FDEDEC", edgecolor="#E74C3C"),
                                         arrowprops=dict(arrowstyle="->", color="#C0392B", lw=1.5))
-                        elif sample_id == 67:  # Uncertain
-                            ax.annotate(f"Mẫu 67 (PB, T-ALL)\nPS = {ps_val:.2f} (Uncertain)",
+                        elif sample_id == 67 and pred == "uncertain":
+                            ax.annotate(f"Mẫu {sample_id} ({tissue})\nPS = {ps_val:.2f} (uncertain)",
                                         xy=(x_pos, ps_val), xytext=(x_pos + 0.16, ps_val - 0.05),
                                         fontsize=rc["font.size"] - 2, fontweight="bold", color="#78281F",
                                         arrowprops=dict(arrowstyle="->", color="#78281F", lw=1.0))
@@ -435,55 +423,42 @@ def plot_fig3a_prediction_strength(ps_df: pd.DataFrame | None = None, mode: str 
                                fontsize=rc["font.size"])
             ax.set_xlim(-0.4, 1.4)
             ax.set_ylim(-0.02, 1.02)
-            ax.set_title(title_panel, loc="left", fontweight="bold", fontsize=rc["font.size"] + 1)
+            ax.set_title(f"{title_panel} ({len(sub)} mẫu)", loc="left", fontweight="bold", fontsize=rc["font.size"] + 1)
             ax.grid(axis="y", linestyle=":", alpha=0.5, color="#BDC3C7")
 
-        # Render 2 panel
-        _render_panel(ax_loocv, "loocv", "(A) Huấn luyện: Kiểm tra chéo LOOCV (38 mẫu)")
-        _render_panel(ax_test, "test", "(B) Độc lập: Tập kiểm tra 34 bệnh nhân mới")
+            confident = sub["pred"].ne("uncertain")
+            correct = confident & sub["pred"].eq(sub["true"])
+            n_conf = confident.sum()
+            n_correct = correct.sum()
+            coverage = f"{n_conf / len(sub):.1%}" if len(sub) else "—"
+            accuracy = f"{n_correct / n_conf:.1%}" if n_conf else "—"
+            summary = [
+                f"Chắc chắn: {n_conf}/{len(sub)} ({coverage})",
+                f"Đúng trong số chắc chắn: {n_correct}/{n_conf} ({accuracy})",
+                f"Trung vị PS: {sub['ps'].median():.2f}" if len(sub) else "Trung vị PS: —",
+                f"Sai: {n_conf - n_correct} · Không chắc chắn: {(~confident).sum()}",
+            ]
+            if subset_name == "test" and "tissue" in sub:
+                pb = sub["tissue"].eq("PB")
+                summary.append(f"PB: {(pb & correct).sum()}/{pb.sum()} đúng, {(pb & ~confident).sum()} không chắc chắn")
+            ax.text(
+                0.04, 0.96, "\n".join(summary), transform=ax.transAxes, va="top",
+                fontsize=rc["font.size"] - 2,
+                bbox=dict(boxstyle="round,pad=0.4", facecolor="white", edgecolor="#BDC3C7", alpha=0.9),
+            )
 
+        _render_panel(ax_loocv, "loocv", "(A) Kiểm tra chéo LOOCV")
+        _render_panel(ax_test, "test", "(B) Tập kiểm tra độc lập")
         ax_loocv.set_ylabel("Prediction Strength (PS)", fontsize=rc["font.size"] + 1)
-
-        # Thống kê hộp tóm tắt
-        loocv_sub = ps_df[ps_df["set"] == "loocv"]
-        loocv_conf = len(loocv_sub[loocv_sub["pred"] != "uncertain"])
-        loocv_corr = len(loocv_sub[loocv_sub["pred"] == loocv_sub["true"]])
-        loocv_med = loocv_sub["ps"].median()
-
-        test_sub = ps_df[ps_df["set"] == "test"]
-        test_conf = len(test_sub[test_sub["pred"] != "uncertain"])
-        test_corr = len(test_sub[test_sub["pred"] == test_sub["true"]])
-        test_med = test_sub["ps"].median()
-
-        ax_loocv.text(0.04, 0.96,
-                      f"Thống kê LOOCV:\n"
-                      f"• Chắc chắn (PS ≥ 0.3): {loocv_conf}/38 (94.7%)\n"
-                      f"• Đúng tuyệt đối: {loocv_corr}/{loocv_conf} (100%)\n"
-                      f"• Trung vị PS: {loocv_med:.2f}\n"
-                      f"• Không chắc chắn: 2 mẫu (#12, #35)",
-                      transform=ax_loocv.transAxes, va="top", ha="left",
-                      fontsize=rc["font.size"] - 2,
-                      bbox=dict(boxstyle="round,pad=0.4", facecolor="#EBF5FB", edgecolor="#AED6F1", alpha=0.9))
-
-        ax_test.text(0.04, 0.96,
-                     f"Thống kê Tập kiểm tra:\n"
-                     f"• Chắc chắn (PS ≥ 0.3): {test_conf}/34 (97.1%)\n"
-                     f"• Đúng: {test_corr}/{test_conf} (97.0%)\n"
-                     f"• Trung vị PS: {test_med:.2f}\n"
-                     f"• Sai: 1 mẫu (#66, AML→ALL)\n"
-                     f"• Không chắc chắn: 1 mẫu (#67)",
-                     transform=ax_test.transAxes, va="top", ha="left",
-                     fontsize=rc["font.size"] - 2,
-                     bbox=dict(boxstyle="round,pad=0.4", facecolor="#FEF9E7", edgecolor="#F9E79F", alpha=0.9))
 
         # Chú giải chung
         legend_handles = [
             Line2D([0], [0], marker="o", color="w", markerfacecolor=CLASS_COLORS["ALL"], markersize=8, label="Lớp ALL (BM)"),
             Line2D([0], [0], marker="o", color="w", markerfacecolor=CLASS_COLORS["AML"], markersize=8, label="Lớp AML (BM)"),
             Line2D([0], [0], marker="s", color="w", markerfacecolor=NEUTRAL, markersize=8, label="Máu ngoại vi (PB)"),
-            Line2D([0], [0], marker="o", color="w", markerfacecolor="#95A5A6", markeredgecolor="#C0392B", markeredgewidth=1.5, markersize=8, label="Uncertain (PS < 0.3)"),
-            Line2D([0], [0], marker="o", color="w", markerfacecolor="#E74C3C", markeredgecolor="black", markeredgewidth=1.5, markersize=10, label="Sai phân loại (#66)"),
-            Line2D([0], [0], color="#C0392B", linestyle="--", linewidth=1.5, label="Ngưỡng PS = 0.30"),
+            Line2D([0], [0], marker="o", color="w", markerfacecolor="#95A5A6", markeredgecolor="#C0392B", markeredgewidth=1.5, markersize=8, label="Không chắc chắn"),
+            Line2D([0], [0], marker="o", color="w", markerfacecolor="#E74C3C", markeredgecolor="black", markeredgewidth=1.5, markersize=10, label="Sai phân loại"),
+            Line2D([0], [0], color="#C0392B", linestyle="--", linewidth=1.5, label=f"Ngưỡng PS = {PS_THRESHOLD:.2f}"),
         ]
         fig.legend(handles=legend_handles, loc="lower center", ncol=6, bbox_to_anchor=(0.5, -0.04),
                    fontsize=rc["font.size"] - 2, frameon=True, facecolor="white")

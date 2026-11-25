@@ -94,6 +94,10 @@ def test_plot_fig3a_prediction_strength_returns_figure(mock_ps_df):
     for mode in ("report", "slide"):
         fig = plot_fig3a_prediction_strength(mock_ps_df, mode=mode)
         assert isinstance(fig, plt.Figure)
+        test_text = "\n".join(text.get_text() for text in fig.axes[1].texts)
+        assert "Chắc chắn: 3/4 (75.0%)" in test_text
+        assert "Đúng trong số chắc chắn: 2/3 (66.7%)" in test_text
+        assert "PB: 0/1 đúng, 1 không chắc chắn" in test_text
         plt.close(fig)
 
 
