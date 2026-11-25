@@ -124,9 +124,10 @@ def plot_fig4_som_redesign(
                       fontsize=style_rc(mode)["font.size"] - 1, fontweight="bold")
 
         ax_a.set_xticks(x_pos)
-        ax_a.set_xticklabels([p[0] for p in paper_counts])
+        ax_a.set_xticklabels(["A1", "A2", "1", "2"])
+        ax_a.set_xlabel("A1–A2: bài báo  ·  1–2: nhóm")
         ax_a.set_ylabel("Số mẫu bệnh nhân")
-        ax_a.set_ylim(0, 1.25 * max(a + m for _, a, m in paper_counts))
+        ax_a.set_ylim(0, 1.4 * max(a + m for _, a, m in paper_counts))
         ax_a.set_title(f"(A) SOM 1×2 ({len(samples_tr)} mẫu train)\n{X_filtered.shape[1]:,} probe · seed {seed}")
         ax_a.legend(frameon=False, loc="upper center", ncol=2)
 
@@ -188,9 +189,10 @@ def plot_fig4_som_redesign(
                       fontsize=style_rc(mode)["font.size"] - 1)
 
         ax_c.set_xticks(x_c)
-        ax_c.set_xticklabels([f"Nút {i+1}" for i in range(n_nodes)])
+        ax_c.set_xticklabels(range(1, n_nodes + 1))
+        ax_c.set_xlabel("Nút SOM")
         ax_c.set_ylabel("Số mẫu")
-        ax_c.set_ylim(0, 1.25 * (b_vals + t_vals + m_vals).max())
+        ax_c.set_ylim(0, 1.55 * (b_vals + t_vals + m_vals).max())
         ax_c.set_title(f"(C) SOM 2×2 ({len(samples)} mẫu)\nKhảo sát nhóm con")
         ax_c.legend(frameon=False, loc="upper right")
 
@@ -278,7 +280,7 @@ def plot_fig4_error_analysis(
                 Patch(facecolor=CLASS_COLORS["AML"], label="AML đúng"),
                 Patch(facecolor="#D55E00", label="Sai phân loại"),
             ],
-            frameon=True, loc="upper left", facecolor="white", framealpha=0.9,
+            loc="upper left", bbox_to_anchor=(0, -0.16), ncol=2, frameon=False,
         )
 
         # ---------------------------------------------------------
@@ -291,7 +293,7 @@ def plot_fig4_error_analysis(
                         s=style_rc(mode)["lines.linewidth"] * 30, marker="o", label="Nguồn")
 
         ax_meta.set_xticks([0, 1])
-        ax_meta.set_xticklabels(["Mô\n(BM/PB)", "Nguồn\n(Bệnh viện)"], fontsize=style_rc(mode)["font.size"] - 1)
+        ax_meta.set_xticklabels(["Mô", "Nguồn"], fontsize=style_rc(mode)["font.size"] - 1)
         ax_meta.set_xlim(-0.5, 1.5)
         ax_meta.set_title("(B) Quản trị dữ liệu", loc="center")
         ax_meta.spines["left"].set_visible(False)
@@ -306,8 +308,8 @@ def plot_fig4_error_analysis(
             Line2D([0], [0], marker="o", color="w", markerfacecolor=SOURCE_COLORS["CCG"], label="CCG"),
             Line2D([0], [0], marker="o", color="w", markerfacecolor=SOURCE_COLORS["St-Jude"], label="St-Jude"),
         ]
-        ax_meta.legend(handles=legend_elements, loc="lower right", bbox_to_anchor=(1.05, 0.0),
-                       fontsize=style_rc(mode)["font.size"] - 2, frameon=True, facecolor="white")
+        ax_meta.legend(handles=legend_elements, loc="upper left", bbox_to_anchor=(-0.10, -0.16),
+                       fontsize=style_rc(mode)["font.size"] - 2, frameon=False, ncol=2)
 
         fig.suptitle("F04. Phân tích lỗi Logistic Regression trên tập kiểm tra độc lập",
                      y=1.02, fontweight="bold")
@@ -338,12 +340,6 @@ def plot_fig3a_prediction_strength(ps_df: pd.DataFrame | None = None, mode: str 
             ax.axhspan(-0.02, PS_THRESHOLD, facecolor="#FADBD8" if mode == "report" else "#F2D7D5", alpha=0.35, zorder=0)
             ax.axhline(PS_THRESHOLD, color="#C0392B", linestyle="--", linewidth=rc["lines.linewidth"] * 1.2,
                        label=f"Ngưỡng PS = {PS_THRESHOLD:.2f}", zorder=2)
-
-            # Text cảnh báo vùng không chắc chắn
-            ax.text(0.5, PS_THRESHOLD / 2, f"Không chắc chắn (PS < {PS_THRESHOLD:.2f})",
-                    transform=ax.get_yaxis_transform(), ha="center", va="center",
-                    fontsize=rc["font.size"] - 1, color="#922B21", style="italic",
-                    bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor="#E6B0AA", alpha=0.85))
 
             classes = ["ALL", "AML"]
             positions = [0, 1]
@@ -402,7 +398,7 @@ def plot_fig3a_prediction_strength(ps_df: pd.DataFrame | None = None, mode: str 
                     elif subset_name == "test":
                         if sample_id == 66 and pred not in (c, "uncertain"):
                             ax.annotate(f"Mẫu {sample_id}: {c} → {pred}\nPS = {ps_val:.5f}",
-                                        xy=(x_pos, ps_val), xytext=(x_pos - 0.45, ps_val + 0.14),
+                                        xy=(x_pos, ps_val), xytext=(0.12, ps_val + 0.14),
                                         fontsize=rc["font.size"] - 1, fontweight="bold", color="#C0392B",
                                         bbox=dict(boxstyle="round,pad=0.3", facecolor="#FDEDEC", edgecolor="#E74C3C"),
                                         arrowprops=dict(arrowstyle="->", color="#C0392B", lw=1.5))
@@ -437,9 +433,8 @@ def plot_fig3a_prediction_strength(ps_df: pd.DataFrame | None = None, mode: str 
                 pb = sub["tissue"].eq("PB")
                 summary.append(f"PB: {(pb & correct).sum()}/{pb.sum()} đúng, {(pb & ~confident).sum()} không chắc chắn")
             ax.text(
-                0.04, 0.96, "\n".join(summary), transform=ax.transAxes, va="top",
+                0.01, -0.15, "\n".join(summary), transform=ax.transAxes, va="top",
                 fontsize=rc["font.size"] - 2,
-                bbox=dict(boxstyle="round,pad=0.4", facecolor="white", edgecolor="#BDC3C7", alpha=0.9),
             )
 
         _render_panel(ax_loocv, "loocv", "(A) Kiểm tra chéo LOOCV")
@@ -453,7 +448,7 @@ def plot_fig3a_prediction_strength(ps_df: pd.DataFrame | None = None, mode: str 
             Line2D([0], [0], marker="s", color="w", markerfacecolor=NEUTRAL, markersize=8, label="Máu ngoại vi (PB)"),
             Line2D([0], [0], marker="o", color="w", markerfacecolor="#95A5A6", markeredgecolor="#C0392B", markeredgewidth=1.5, markersize=8, label="Không chắc chắn"),
             Line2D([0], [0], marker="o", color="w", markerfacecolor="#E74C3C", markeredgecolor="black", markeredgewidth=1.5, markersize=10, label="Sai phân loại"),
-            Line2D([0], [0], color="#C0392B", linestyle="--", linewidth=1.5, label=f"Ngưỡng PS = {PS_THRESHOLD:.2f}"),
+            Patch(facecolor="#FADBD8", edgecolor="#C0392B", label=f"Vùng PS < {PS_THRESHOLD:.2f}"),
         ]
         fig.legend(handles=legend_handles, loc="lower center", ncol=6, bbox_to_anchor=(0.5, -0.04),
                    fontsize=rc["font.size"] - 2, frameon=True, facecolor="white")
