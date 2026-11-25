@@ -2,14 +2,14 @@
 
 Công việc: 1.4 / 2.6 — Phụ trách: TV6 (kế hoạch mục 4.1, 4.2, 5.2).
 
-Hình do module này vẽ (bản 1, công việc 1.4):
-  F02  histogram trước/sau log10          F04a scree plot
-  F02b phân bố độ biến thiên của gen      F04b PCA PC1–PC2 theo lớp và nhóm con
-  F03  boxplot theo từng mẫu              F04c so sánh PCA / t-SNE / UMAP
+Hình do module này vẽ (công việc 1.4; F01, F04d chuyển từ notebook 02 của TV1 ở công việc 2.6):
+  F01  thiết kế mẫu (nguồn × mô × lớp)    F04a scree plot
+  F02  histogram trước/sau log10          F04b PCA PC1–PC2 theo lớp và nhóm con
+  F02b phân bố độ biến thiên của gen      F04c so sánh PCA / t-SNE / UMAP
+  F03  boxplot theo từng mẫu              F04d PCA theo nguồn và loại mô (batch effect)
                                           F04e tương quan giữa các mẫu + phân cụm phân cấp
-Hình do người khác vẽ (sẽ chuyển sang module này ở công việc 2.6, giữ nguyên tên file):
-  F01, F04d (TV1, notebooks/02_design_batch.ipynb) · F10, F11 (TV2, src/evaluate.py)
-  F05–F09, F12 chưa có (chờ kết quả giai đoạn 2).
+Hình do người khác vẽ (giữ nguyên tên file):
+  F10, F11 (TV2, src/evaluate.py) · F05–F09, F12 chưa có (chờ kết quả giai đoạn 2).
 
 Quy ước dùng chung:
   - Mọi hàm `plot_*` / `pca_scatter` nhận `mode="report"` (chữ 10 pt, 300 dpi) hoặc `mode="slide"`
@@ -57,9 +57,11 @@ SUBTYPE_COLORS = {"B-ALL": "#0072B2", "T-ALL": "#332288", "AML": "#E69F00"}
 SUBTYPE_MARKERS = {"B-ALL": "o", "T-ALL": "s", "AML": "^"}
 # Khớp với hình F4d của TV1: một nguồn mẫu luôn có một màu trong mọi hình.
 SOURCE_COLORS = {"DFCI": "#009E73", "CALGB": "#CC79A7", "CCG": "#56B4E9", "St-Jude": "#D55E00"}
-TISSUE_COLORS = {"BM": "#7F7F7F", "PB": "#D55E00"}
 NEUTRAL = "#4D4D4D"          # đối tượng không mang nghĩa lớp (cột scree, đường tham chiếu…)
 NEUTRAL_LIGHT = "#BDBDBD"
+# Loại mô: BM (đa số, 64/72) xám nhạt, PB (máu ngoại vi, nhóm cần chú ý) đen. Không dùng lại #D55E00
+# vì màu đó đã là St-Jude: F4d đặt hai panel cạnh nhau, một màu chỉ được mang một nghĩa (2.6, ADR-070).
+TISSUE_COLORS = {"BM": NEUTRAL_LIGHT, "PB": "#000000"}
 DIVERGING_CMAP = "RdBu_r"    # heatmap z-score: xanh–trắng–đỏ, tâm 0; KHÔNG dùng rainbow/jet
 SEQUENTIAL_CMAP = "cividis"  # thang tuần tự an toàn với người mù màu (ma trận tương quan)
 
@@ -563,6 +565,95 @@ def plot_embeddings(embeddings: dict[str, pd.DataFrame], samples: pd.DataFrame, 
     return fig
 
 
+def design_counts(samples: pd.DataFrame) -> pd.DataFrame:
+    """Bảng đếm cho F01: một dòng mỗi (tập, nguồn, loại mô), cột ALL/AML. Giữ cả tổ hợp 0 mẫu
+    (ví dụ tập train không có PB) để hai panel train/test có cùng các hàng."""
+    groups = samples[["source", "tissue"]].drop_duplicates().sort_values(["source", "tissue"])
+    rows = pd.MultiIndex.from_frame(groups)
+    out = []
+    for split in ("train", "test"):
+        sub = samples[samples["split"] == split]
+        c = (pd.crosstab([sub["source"], sub["tissue"]], sub["class"])
+             .reindex(rows, fill_value=0).reindex(columns=["ALL", "AML"], fill_value=0))
+        out.append(c.assign(split=split).reset_index())
+    return pd.concat(out, ignore_index=True)[["split", "source", "tissue", "ALL", "AML"]]
+
+
+@styled
+def plot_sample_design(samples: pd.DataFrame, mode: str = "report"):
+    """F01 — Mỗi tổ hợp nguồn × loại mô có bao nhiêu mẫu ALL/AML ở tập train và test?
+
+    Hai panel cùng trục (small multiples); cột ngang bắt đầu từ 0, ghi số trực tiếp ở cuối cột;
+    ALL trơn, AML gạch chéo (mã hóa dư thừa). Thay hình cùng tên của notebook 02 (TV1).
+    """
+    counts = design_counts(samples)
+    groups = counts[counts["split"] == "train"][["source", "tissue"]]
+    ylabels = [f"{s} – {t}" for s, t in zip(groups["source"], groups["tissue"])]
+    ypos = np.arange(len(ylabels))
+    h = 0.38
+    xmax = int(counts[["ALL", "AML"]].to_numpy().max())
+    xlim = xmax + max(3, round(0.12 * xmax))                     # chừa chỗ cho nhãn số
+    fs = FIG_STYLES[mode]["fontsize"]
+    fig, axes = plt.subplots(1, 2, figsize=figsize(mode, 0.55 if mode == "report" else 0.48),
+                             sharex=True, sharey=True)
+    for ax, split in zip(axes, ("train", "test")):
+        c = counts[counts["split"] == split].reset_index(drop=True)
+        for i, cls in enumerate(("ALL", "AML")):
+            y = ypos + (i - 0.5) * h
+            ax.barh(y, c[cls], height=h, color=CLASS_COLORS[cls], edgecolor="black", linewidth=0.5,
+                    hatch="////" if cls == "AML" else "")
+            for yy, n in zip(y, c[cls]):
+                if n > 0:
+                    ax.text(n + 0.4, yy, str(n), va="center", ha="left", fontsize=fs)
+        n_split = int((samples["split"] == split).sum())
+        ax.set_title(f"Tập {split} (n = {n_split})")
+        ax.set_xlabel("Số mẫu")
+        ax.set_xlim(0, xlim)
+        ax.tick_params(axis="y", length=0)
+    axes[0].set_yticks(ypos, ylabels)
+    axes[0].invert_yaxis()
+    handles = [Patch(facecolor=CLASS_COLORS["ALL"], edgecolor="black", linewidth=0.5, label="ALL"),
+               Patch(facecolor=CLASS_COLORS["AML"], edgecolor="black", linewidth=0.5, hatch="////", label="AML")]
+    fig.legend(handles=handles, loc="lower center", ncol=2, frameon=False, bbox_to_anchor=(0.5, -0.08))
+    _title(fig, "F1. Thiết kế mẫu: số mẫu theo nguồn, loại mô và lớp")
+    fig.tight_layout()
+    return fig
+
+
+@styled
+def plot_pca_batch(scores: pd.DataFrame, ratio, samples: pd.DataFrame, mode: str = "report"):
+    """F04d — Các mẫu có tụ theo nguồn hoặc loại mô (batch effect) không? PCA PC1–PC2 trên gen đã lọc;
+    trái: màu theo nguồn mẫu, phải: màu theo loại mô; hình dạng điểm luôn là lớp (ALL tròn, AML tam giác).
+
+    Cùng tọa độ với F04b (truyền `scores`, `ratio` từ compute_pca). Thay hình cùng tên của notebook 02 (TV1).
+    """
+    fig, axes = plt.subplots(1, 2, figsize=figsize(mode, 0.62 if mode == "report" else 0.5),
+                             sharex=True, sharey=True)
+    for ax, col in zip(axes, ("source", "tissue")):
+        pca_scatter(None, samples, color=col, shape="class", scores=scores, ratio=ratio, ax=ax, mode=mode,
+                    legend=False, label_outliers=(col == "source"))
+        ax.set_title(f"Màu theo {LABELS[col].lower()}")
+        present = set(samples.loc[scores.index, col])
+        handles = [Patch(facecolor=c, edgecolor="black", linewidth=0.5, label=v)   # màu = nhóm, ô vuông
+                   for v, c in COLOR_MAPS[col].items() if v in present]
+        ax.legend(handles=handles, frameon=False, loc="upper center", bbox_to_anchor=(0.5, -0.24),
+                  ncol=2 if mode == "report" else 4, handletextpad=0.2, columnspacing=0.8,
+                  title=LABELS[col])
+    axes[1].set_ylabel("")
+    ms = 6 if mode == "report" else 11
+    shape_h = [Line2D([], [], ls="", marker=CLASS_MARKERS[c], mfc="white", mec="black", ms=ms, label=c)
+               for c in ("ALL", "AML")]
+    if "qc_outlier" in samples and samples.loc[scores.index, "qc_outlier"].astype(bool).any():
+        shape_h.append(Line2D([], [], ls="", marker="o", mfc="none", mec="black", mew=1.2,
+                              ms=9 if mode == "report" else 14, label="qc_outlier"))
+    # chú giải hình dạng (dùng chung hai panel) nằm giữa, ngay dưới tiêu đề
+    fig.tight_layout(rect=(0, 0, 1, 0.9))
+    fig.legend(handles=shape_h, loc="center", ncol=len(shape_h), frameon=False,
+               bbox_to_anchor=(0.5, 0.93), handletextpad=0.2, columnspacing=1.2)
+    _title(fig, "F4d. PCA (PC1–PC2) tô theo nguồn mẫu và loại mô", y=1.0)
+    return fig
+
+
 def sample_linkage(corr: np.ndarray, method: str = "average") -> np.ndarray:
     """Phân cụm phân cấp theo khoảng cách 1 − Pearson, liên kết average (mục 3.1.2)."""
     d = 1.0 - np.asarray(corr, float)
@@ -611,16 +702,18 @@ def plot_sample_correlation(X: pd.DataFrame, samples: pd.DataFrame, mode: str = 
 def render_eda(Xraw: pd.DataFrame, Xl: pd.DataFrame, Xf: pd.DataFrame, samples: pd.DataFrame,
                modes: tuple[str, ...] = MODES, base_dir: Path | None = None, seed: int = RANDOM_SEED,
                embedding_methods: tuple[str, ...] = ("pca", "tsne", "umap")) -> list[Path]:
-    """Vẽ F02, F02b, F03, F04a, F04b, F04c, F04e cho các chế độ; trả về danh sách file đã ghi."""
+    """Vẽ F01, F02, F02b, F03, F04a–F04e cho các chế độ; trả về danh sách file đã ghi."""
     scores, ratio = compute_pca(Xf, 10, seed)
     emb = compute_embeddings(Xf, seed, embedding_methods)
     builders = {
+        "F01_thiet_ke_mau": lambda m: plot_sample_design(samples, mode=m),
         "F02_hist_before_after_log": lambda m: plot_hist_log(Xraw, Xl, mode=m),
         "F02b_gene_variance": lambda m: plot_gene_variance(Xl, mode=m),
         "F03_box_per_sample": lambda m: plot_box_per_sample(Xl, samples, mode=m),
         "F04a_pca_scree": lambda m: plot_scree(ratio, mode=m),
         "F04b_pca_by_class": lambda m: plot_pca_by_class(scores, ratio, samples, mode=m),
         "F04c_tsne_umap": lambda m: plot_embeddings(emb, samples, mode=m),
+        "F04d_pca_batch": lambda m: plot_pca_batch(scores, ratio, samples, mode=m),
         "F04e_sample_correlation": lambda m: plot_sample_correlation(Xf, samples, mode=m),
     }
     paths = []
@@ -643,9 +736,8 @@ def main() -> None:
     METRICS_DIR.mkdir(parents=True, exist_ok=True)
     out = METRICS_DIR / "eda_summary.json"
     out.write_text(json.dumps(eda_summary(Xraw, Xl, Xf, samples), ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"Đã vẽ {len(paths)} hình EDA (F02, F02b, F03, F04a, F04b, F04c, F04e) và ghi {out.name}.")
-    print("Chưa thuộc module này: F01, F04d (TV1, notebook 02), F10, F11 (TV2, evaluate.py); "
-          "F05–F09, F12 sẽ thêm ở công việc 2.6.")
+    print(f"Đã vẽ {len(paths)} hình (F01, F02, F02b, F03, F04a–F04e) và ghi {out.name}.")
+    print("Chưa thuộc module này: F10, F11 (TV2, evaluate.py); F05–F09, F12 chờ giai đoạn 2.")
 
 
 if __name__ == "__main__":

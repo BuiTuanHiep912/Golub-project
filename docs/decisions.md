@@ -165,6 +165,30 @@ tái lập được và truy ngược về nguồn.
   - `tests/test_interfaces.py` khóa tên hàm dùng chung; đổi tên thì ghi ADR và sửa test cùng lúc.
 - **Hệ quả:** kế hoạch, phân công và hạn giai đoạn 2 nằm trong tài liệu "Kế hoạch giai đoạn 2 (hướng mới)".
 
+## ADR-020 — Lựa chọn cài đặt mô hình Golub weighted voting (công việc 2.1)
+- **Ngày:** 15/11/2026 · **Người quyết định:** TV1
+- **Bối cảnh:** bài báo (thân bài tr. 532, ghi chú 18–21) không nêu đủ chi tiết để cài đặt duy nhất một cách; các lựa
+  chọn nhỏ có thể đổi kết luận: mẫu 66 có PS = 0,30004, chỉ vừa qua ngưỡng 0,3. Công thức và ví dụ tính tay:
+  `docs/report/5.1_mo_hinh_golub.md`.
+- **Quyết định** (`src/golub_wv.py`):
+  - **D1 — Chuẩn hóa:** z-score từng gen theo mean/SD của tập train trước khi bỏ phiếu, đúng ghi chú 19
+    (`standardize=True`, mặc định). Thực hiện trong `fit`, nên mỗi lần lặp LOOCV tự tính lại trên phần huấn luyện.
+    z-score không đổi SNR, nên không đổi tập gen chọn được; chỉ đổi độ lớn phiếu. `standardize=False` chỉ dùng để
+    đối chiếu với ví dụ tính tay.
+  - **D2 — Độ lệch chuẩn:** chia n − 1 (`ddof=1`, mặc định của pandas và hàm `sd()` của R); bài báo không nêu.
+  - **D3 — Số gen lẻ:** báo `ValueError`, vì ghi chú 18 định nghĩa theo n/2 và thí nghiệm lưới k (có k = 5) đã bỏ
+    theo ADR-014. Thay cho ghi chú "TV1 chốt ở 2.1" trong `config/experiment_config.yaml`.
+  - **Gen hằng:** gen có SD = 0 trên train (1050 gen ở ngưỡng sàn) giữ SD = 1 khi chuẩn hóa; gen có σ_ALL + σ_AML = 0
+    được gán SNR = 0 nên không bao giờ được chọn.
+  - **Ngưỡng:** PS < `PS_THRESHOLD` (0,3, `src/config.py`) thì trả `"uncertain"`; PS đúng bằng 0,3 tính là chắc chắn.
+  - **`predict_proba`:** trả tỷ lệ phiếu V_ALL / (V_ALL + V_AML), không phải xác suất hiệu chỉnh; ghi rõ trong docstring.
+- **Hệ quả:** LOOCV 38 mẫu: 36 dự đoán chắc chắn, 36 đúng, khớp bài báo. Tập test 34 mẫu: 33 chắc chắn, 32 đúng,
+  PS trung vị 0,73; bài báo 29/29 (`notebooks/05_golub_reproduction.ipynb`). Bản 15/11 ghi "32 chắc chắn, 31 đúng" là
+  cộng nhầm từ bảng nhầm lẫn; số đúng là 33/32. Dự đoán sai duy nhất là mẫu 66 (PS = 0,30004). Chưa đổi lựa chọn nào.
+- **Cập nhật 23/11 (tuần 2):** `patient_profile()` dùng mô hình 38 mẫu cho mẫu test và mẫu mới; với mẫu train dùng
+  mô hình bỏ chính mẫu đó (37 mẫu) để PS trùng LOOCV. Mẫu mới nhận ở thang gốc, đi qua `threshold_log10` như tầng
+  curated. Bệnh nhân tương tự: tương quan Pearson trên 50 gen bỏ phiếu đã z-score, chỉ so với 38 mẫu tham chiếu.
+
 ## ADR-050 — Quy ước của `src/features.py` (công việc 2.2, bản 1; đã thay thế bởi ADR-051)
 - **Ngày:** 01/11/2026 · **Người quyết định:** TV4
 - **Giao diện:** 6 bộ chọn `snr, ttest, lasso, enet, rf, svm_rfe` (đúng tên trong `experiment_config.yaml`),
@@ -221,6 +245,164 @@ tái lập được và truy ngược về nguồn.
   Lần gọi đầu 0,2–0,7 s, các lần sau < 0,02 s (trước khi có bộ nhớ đệm: 0,5–1 s mỗi lần).
 - **Kiểm tra:** `tests/test_gene_explorer.py` (30 test, dữ liệu tổng hợp cùng cỡ nhóm Golub + 1 test trên dữ liệu thật).
 
+## ADR-052 — Khám phá gen bản 2: độ tin cậy, độ vững, lô mới, đọc kho DuckDB, `src/viz_gene.py`
+- **Ngày:** 17/11/2026 · **Người quyết định:** TV4 (công việc 2.2, tuần 2)
+- **Bối cảnh:** màn hình Khám phá gen mới trả lời "gen này biểu hiện thế nào", chưa trả lời được câu chính của nhà
+  nghiên cứu: số đo có tin được không, khác biệt có vững không, và khi có lô mẫu mới thì có gì bất thường.
+- **Hàm mới trong `src/gene_explorer.py`** (không đổi tên hàm đã khóa):
+  - `gene_reliability(probe_id)`: theo **từng lớp**, tỉ lệ call P/M/A của chip (`standardized/calls.parquet`) và tỉ lệ
+    mẫu ở mức sàn (log10 = 2). Phải tính theo lớp vì gen dấu ấn tốt thường tắt ở một lớp: CD33 có P ở 19% ALL, 92% AML;
+    tính chung 72 mẫu sẽ trông như tín hiệu yếu. Kiểu: `on_off`, `level`, `weak` (lớp "có mặt" khi ≥ 50% call P).
+  - `robustness(probe_id)`: chênh lệch ALL − AML qua 7 phép so sánh (huấn luyện làm mốc, 72 mẫu, bỏ mẫu gắn cờ QC,
+    B-ALL, T-ALL, chỉ tủy xương, trong St-Jude) kèm `fold_change` = 10^diff và cờ cùng chiều. Chỉ mô tả.
+  - `marker_consistency(source | sample_ids)`: lô **có** nhãn. Gen dấu ấn = 25 + 25 gen hạng cao nhất mỗi phía (như
+    Golub; top 50 theo hạng chung cho 44/50 thay vì 46/50). `only_test=True` mặc định để không so tập huấn luyện với chính nó.
+  - `batch_anomalies(source | sample_ids)`: lô **chưa** nhãn. Mẫu có gen dấu ấn ngoài [min, max] của 38 mẫu huấn
+    luyện; mức lệch tính theo độ lệch chuẩn của gen. Không dùng nhãn của lô (có test khóa điều này).
+  - `ranking_table(top_n=None)` lấy toàn bộ gen; `gene_values` trả thêm `qc_outlier`.
+- **Ngưỡng chênh lệch tối thiểu `MIN_DIFF_LOG10 = 0,1`** (≈ 1,26 lần): chênh lệch trong lô nhỏ hơn mức này xếp
+  "Chênh lệch nhỏ", không tính là giữ hay đảo chiều. Lý do: 4 gen "đảo chiều" theo dấu ở St-Jude đều sát mức sàn,
+  chênh 0,00–0,05 (TCF12 bằng đúng 0); ngược lại có gen "giữ chiều" chỉ chênh 0,002. Kết quả St-Jude: 46/50 cùng dấu
+  (khớp 1.6); với ngưỡng: **41 giữ chiều, 0 đảo chiều, 9 quá nhỏ**. Không gen dấu ấn nào đảo chiều rõ trong cùng một
+  phòng lab, ủng hộ khác biệt do bệnh; giới hạn: St-Jude chỉ có 3 ALL, 5 AML.
+- **Đọc kho DuckDB của TV3** (`fact_expression.value_log10`, `dim_sample`) khi `data/warehouse/golub.duckdb` tồn tại,
+  không thì đọc `load_golub("curated")`; `data_source()` cho biết đang dùng nguồn nào, `USE_WAREHOUSE = False` để ép
+  đọc Parquet. Đã kiểm tra: X và bảng mẫu đọc từ kho **giống hệt** tầng curated (test dựng kho vào thư mục tạm).
+  `WAREHOUSE_PATH` khai lại trong module (không import `src.warehouse` để module không bắt buộc cài duckdb) và có test
+  kiểm tra trùng với hằng số của TV3.
+- **`src/viz_gene.py`** (file riêng theo ADR-014, dùng màu/hình điểm/cỡ chữ của `src/viz.py`): volcano, biểu hiện một
+  gen (chấm đặc huấn luyện, chấm rỗng kiểm tra, vòng đen mẫu gắn cờ, ghi n, tô nền ô đủ hai lớp), nhất quán của lô,
+  thanh SNR hai phía. Mỗi hình có bản Altair (`*_chart`, cho dashboard) và bản matplotlib (`plot_*`, mode
+  report/slide). `python -m src.viz_gene` ghi `gene_volcano`, `gene_expression_CD33`, `gene_consistency_StJude`
+  vào `results/figures/{report,slides}/`. Chưa thêm vào `Makefile`/`run_all.py` (file chung, cần báo nhóm).
+- **Ranh giới, không chồng việc:** kiểm tra định dạng và chất lượng chip của lô mới là của TV2 (2.4); vị trí một bệnh
+  nhân trên PCA và gen bỏ phiếu là của TV1 (2.1); đặt hình lên trang là của TV6 (2.6). TV4 chỉ cung cấp hàm.
+- **Kiểm tra:** `tests/test_gene_explorer.py` 45 test (thêm dữ liệu giả có T-ALL, mẫu gắn cờ, call P/A, mẫu CCG bất
+  thường; khóa 46/50 và 0 đảo chiều trên dữ liệu thật), `tests/test_viz_gene.py` 14 test. Toàn bộ repo 178 test đạt.
+- **Bổ sung 18/11 (độ bất định cho `marker_consistency`):**
+  - *Vì sao vẫn dùng hiệu trung bình, không dùng SNR trong lô:* hàm chỉ xét chiều, mà dấu SNR luôn trùng dấu hiệu trung
+    bình (mẫu số dương). σ tính từ 3–5 mẫu của lô không ổn định và gần 0 ở mức sàn, làm SNR bị thổi phồng đúng ở các gen
+    cần loại. Hiệu log10 có đơn vị dễ đọc (0,1 ≈ 1,26 lần).
+  - *Thêm kiểm định hoán vị trong lô* (`attrs["p_perm"]`, `attrs["n_perm"]`): xáo nhãn các mẫu của lô (giữ số ALL/AML),
+    đếm lại số gen cùng dấu với tập huấn luyện; p = tỉ lệ cách xếp cho số gen ≥ nhãn thật. Kiểm định cho **cả bộ** gen,
+    không từng gen (3 mẫu thì kiểm định từng gen gần như vô nghĩa), và giữ tương quan giữa các gen. Lô ít mẫu thì duyệt đủ
+    (≤ 5000 cách), lô lớn thì xáo 2000 lần với seed cố định. **St-Jude: duyệt đủ C(8,3) = 56 cách, p = 2/56 ≈ 0,036**
+    (nhỏ nhất có thể là 1/56 ≈ 0,018); toàn bộ 34 mẫu kiểm tra: 50/50 cùng dấu, p ≈ 0,002. Với 8 mẫu, p không thể nhỏ
+    hơn 0,018, nên kết quả St-Jude chỉ ở mức ủng hộ vừa phải.
+  - *Thêm cột `batch_diff_sd`* = `batch_diff` / độ lệch chuẩn gộp trong lớp của gen trên 38 mẫu huấn luyện, để so mức chênh
+    giữa các gen theo cùng đơn vị. σ lấy từ tập huấn luyện vì ổn định hơn σ của lô. `status` vẫn theo `MIN_DIFF_LOG10`
+    để không đổi số liệu đã báo cáo; 9 gen "Chênh lệch nhỏ" ở St-Jude đều có |batch_diff_sd| ≤ 0,58.
+  - Thêm 3 test (liệt kê cách xếp, kiểm định trên dữ liệu có tín hiệu và ngược chiều, cột chuẩn hóa) và khóa p = 2/56 trên
+    dữ liệu thật. Toàn bộ repo 181 test đạt.
+
+## ADR-040 — Lược đồ kho DuckDB `golub.duckdb` (công việc 2.3, bản 1)
+- **Ngày:** 15/11/2026 · **Người quyết định:** TV3 (theo ADR-014 và *Kế hoạch giai đoạn 2 (hướng mới)*)
+- **Bối cảnh:** TV1, TV2, TV4, TV6 cần một nơi truy vấn chung thay vì tự đọc Parquet; lược đồ hình sao ở
+  Bảng 2.7 mới chỉ có trên giấy.
+- **Quyết định:** `src/warehouse.py` dựng `data/warehouse/golub.duckdb` (không lên Git) từ `load_golub("cleansed")`,
+  `load_golub("curated")` và `standardized/genes.parquet`:
+  - `fact_expression(sample_id, probe_id, value_raw, value_log10)`: dạng dài, 72 × 7129 = 513 288 dòng. Giữ cả giá trị
+    MAS4 gốc (tầng cleansed, có âm) và giá trị log10 (tầng curated) để mọi con số đối chiếu được với tầng gốc.
+  - `dim_sample(sample_id, split, class, subtype, tissue, source, sex, qc_outlier, batch_id)`, khóa chính `sample_id`.
+  - `dim_gene(probe_id, description, is_control)`, khóa chính `probe_id`.
+  - `dim_batch(batch_id, source, n_samples, n_train, n_test, n_all, n_aml, n_bm, n_pb)`: **mỗi phòng lab là một lô,
+    `batch_id` = tên nguồn** (`DFCI`, `CALGB`, `St-Jude`, `CCG`, khớp `BATCH_SOURCES` của `src/ingest.py`).
+  - `fact_qc`: nạp nguyên kết quả `ingest_batches()` của TV2; **TV2 giữ `batch_id` = tên nguồn** để nối được với
+    `dim_batch`. Khi `ingest_batches()` chưa cài đặt thì bỏ qua bảng này và in thông báo, các bảng khác vẫn dựng.
+- **Cách ghi:** ghi ra file tạm rồi thay file cũ, lỗi giữa chừng không để lại kho dở dang. Dựng lại mất khoảng 4 giây.
+- **Truy vấn OLAP:** mỗi câu hỏi nghiệp vụ là một file `sql/NN_<chủ đề>.sql`, có chú thích câu hỏi ở đầu file.
+- **Kiểm tra:** `tests/test_warehouse.py` dựng kho vào thư mục tạm, đối chiếu Bảng 2.4, khóa ngoại, khoảng giá trị
+  và số giá trị âm (147 174).
+- **Đã sửa bởi ADR-041:** `dim_batch`, `fact_qc` và `batch_id` theo `src/ingest.py` của TV2.
+
+## ADR-041 — Kho bản 2: `dim_batch`, `fact_qc` lấy từ `src/ingest.py`, chỉ nạp mẫu của lô đạt (công việc 2.3)
+- **Ngày:** 23/11/2026 · **Người quyết định:** TV3
+- **Bối cảnh:** TV2 cài đặt `src/ingest.py` (ADR-030) với `batch_id` dạng `B1-DFCI`, `B2-CALGB`, `B3-St-Jude`, `B4-CCG`,
+  và tách hai đầu ra: `batches.parquet` (một hàng mỗi lô) và `qc_samples.parquet` (một hàng mỗi mẫu). Quy ước
+  `batch_id` = tên nguồn và `fact_qc` theo lô của ADR-040 không còn khớp.
+- **Quyết định (thay phần tương ứng của ADR-040):**
+  - `dim_batch` = nguyên `batches.parquet` (có `status`, `reason`, `warnings`, chỉ số chất lượng theo lô); bỏ các cột
+    tự tính `n_all, n_aml, n_bm, n_pb` của bản 1. Khóa chính `batch_id` theo TV2.
+  - `fact_qc` = nguyên `qc_samples.parquet`: **một hàng mỗi mẫu**, nối với `dim_sample` qua `(sample_id, batch_id)`.
+  - `log_ingest` = `ingest_log.csv` (nhật ký mọi lần `make ingest`), có khi file tồn tại; dùng cho sơ đồ truy vết.
+  - `dim_sample.batch_id` lấy từ `fact_qc`, không tự suy từ `source`.
+  - **Chỉ mẫu thuộc lô `passed` mới vào `dim_sample` và `fact_expression`.** Lô bị chặn vẫn nằm trong `dim_batch`
+    và `fact_qc` để màn hình Chất lượng dữ liệu hiện lý do chặn.
+  - Đọc file của `make ingest`; nếu chưa chạy thì gọi `ingest_batches()`, `sample_quality()` tại chỗ (không ghi
+    file, không ghi nhật ký). Tên file lấy từ hằng `BATCHES_FILE`, `QC_FILE`, `LOG_FILE` của `src/ingest.py`.
+- **Thứ tự chạy:** `make data` → `make ingest` → `make warehouse` (đúng thứ tự của `make all`).
+- **Kiểm tra:** `tests/test_warehouse.py` thêm 2 test: khóa ngoại `fact_qc`–`dim_sample`, cờ `qc_outlier` của TV2 trùng
+  tầng cleansed (chỉ mẫu 21), và giả lập lô B4-CCG bị chặn thì 5 mẫu CCG không vào kho.
+
+## ADR-030 — Nhập theo lô và kiểm tra file mẫu mới (`src/ingest.py`, công việc 2.4)
+- **Ngày:** 12/11/2026 · **Người quyết định:** TV2
+- **Bối cảnh:** nhánh `2.4-ingest` (commit `7717555`) có `ingest_lots()` chia "lô" theo 4 file raw và
+  `validate_new_sample(sample: dict)` trả `{valid, errors, warnings, normalized}` — lệch giao diện khóa
+  ở ADR-014 (`ingest_batches()`, `validate_new_sample(path)` → `{ok, errors, warnings, values}`),
+  `tests/test_interfaces.py` báo `src.ingest thiếu ['ingest_batches']`. Viết lại trên nhánh `2.4-ingest-v2`.
+- **Quyết định:**
+  - Lô = mọi mẫu của một phòng lab (`source`): B1-DFCI, B2-CALGB, B3-St-Jude, B4-CCG, tách từ tầng
+    standardized. Nguồn lạ hoặc thiếu vẫn thành một lô riêng để bị chặn, không lặng lẽ bỏ qua.
+  - **Chặn lô** khi vi phạm ràng buộc cấu trúc/quan hệ: thiếu/thừa/trùng probe, ô trống, giá trị không
+    phải số, `sample_id` trống/trùng/đã thuộc lô khác, metadata bắt buộc thiếu hoặc ngoài danh mục, lô
+    nhiều nguồn, `class` lệch `subtype`, call ngoài P/A/M. Chặn một lô không ảnh hưởng lô khác.
+  - **Không chặn** theo chỉ số chất lượng (tương quan, tỷ lệ P, `qc_outlier`): chỉ báo cáo, cùng tinh
+    thần ADR-004. Quy tắc gắn cờ theo mẫu tách thành `src.quality.sample_qc()` dùng chung cho tầng
+    cleansed và ingest (quality_report.md và cờ của cleansed không đổi, đã đối chiếu).
+  - Lô thêm từ file CSV (`ingest_batches(extra_files=...)`) để demo lô lỗi; chỉ số của lô thêm đo so
+    với các lô thật nên không làm đổi cờ của 72 mẫu thật.
+  - Đầu ra (`write=True`, `make ingest`) ở `data/cleansed/`: `batches.parquet` (→ `dim_batch`),
+    `qc_samples.parquet` (→ `fact_qc`), `ingest_log.csv` ghi thêm mỗi lần chạy. Mặc định
+    `ingest_batches()` không ghi file để dashboard gọi trực tiếp. Thêm `sample_quality()` (bảng theo mẫu).
+  - `validate_new_sample(path)`: CSV `probe_id,value`, đủ 7129 probe chuẩn, không trùng/trống/không số;
+    nhận cả đối tượng file (nút tải của Streamlit). Có > 90% giá trị < 100 thì báo lỗi "đã log hóa / sai
+    thang" (72 chip thật: 40–56%). Chip lệch 38 mẫu tham chiếu (modified z của tương quan trung vị,
+    trung vị, IQR; ngưỡng 3.5 như ADR-004) chỉ cảnh báo. Đã chạy cả 34 bệnh nhân tập test: đều `ok`,
+    không cảnh báo nhầm.
+- **Kiểm thử:** `tests/test_ingest.py` (20 test trên dữ liệu thật; báo lỗi, không skip khi thiếu dữ liệu).
+
+## ADR-070 — Vẽ lại F01, F04d bằng `src/viz.py`; đổi màu loại mô (công việc 2.6)
+- **Ngày:** 22/11/2026 · **Người đề xuất / quyết định:** TV6
+- **Bối cảnh:** F01, F04d (TV1, notebook 02) vẽ rộng 10–11 in nên chữ khi in nhỏ hơn 10 pt, màu ghi cứng
+  trong notebook (ADR-011). Trong F04d gốc, `#D55E00` vừa là St-Jude (panel trái) vừa là PB (panel phải),
+  vi phạm quy tắc "một màu một nghĩa trong một hình" của style guide.
+- **Quyết định:**
+  - Thêm `viz.design_counts`, `viz.plot_sample_design` (F01) và `viz.plot_pca_batch` (F04d) vào
+    `render_eda`; `make figures` vẽ cả hai, giữ nguyên tên file `F01_thiet_ke_mau_*`, `F04d_pca_batch_*`.
+  - F04d dùng chung tọa độ PCA với F04b (`compute_pca`, cùng z-score và seed như notebook 02: PC1 16,1 %,
+    PC2 11,4 %); chú giải màu là ô vuông, chú giải hình dạng (lớp) dùng chung ở trên; mẫu 21 khoanh tròn.
+  - `TISSUE_COLORS`: BM `#BDBDBD`, PB `#000000` (trước: `#7F7F7F` / `#D55E00`). Áp dụng cho cả dashboard.
+  - F01: hai panel cùng trục, cột từ 0, nhãn số trực tiếp, AML gạch `////` viền đen (in đen trắng vẫn đọc được).
+- **Hệ quả:** notebook 02 (TV1) vẫn còn hàm vẽ cũ; chạy lại notebook sẽ ghi đè hình bằng bản cũ. Theo
+  ADR-014 TV6 không sửa notebook của người khác: TV1 thay ô vẽ bằng lời gọi `viz` (xem `docs/handover/2.6.md`).
+
+## ADR-031 — Bộ file lỗi mẫu, F8 và F10 bản cuối (công việc 2.4, tuần 2 của lịch giai đoạn 2)
+- **Ngày:** 12/11/2026 · **Người quyết định:** TV2
+- **Bối cảnh:** nhánh `2.4-f8-f10-demo` (commit `562ec9c`) chỉ có 4 file JSON/CSV vài dòng trong
+  `data/sandbox/demo_errors/` (thêm bằng `git add -f`, trái `.gitignore` `data/**`), dạng dict metadata
+  không khớp `validate_new_sample(path)` (file chip 7129 gen); chưa có F8; F10 vẫn là bản 1 (pipeline tạm
+  trên tầng cleansed, chữ 9 pt / 220 dpi, tiêu đề ghi cứng "100 lần hoán vị"). Làm lại trên `2.4-f8-f10-demo-v2`.
+- **Quyết định:**
+  - **Bộ file lỗi mẫu** sinh bằng code (`write_demo_files()`, `python -m src.ingest --demo`) từ dữ liệu
+    thật vào `data/demo/` (không lên Git, tạo lại được): 10 file chip một mẫu + 3 file lô, `README.md` ghi
+    kết quả mong đợi; `tests/test_ingest.py` kiểm từng file. Gỡ `data/sandbox/demo_errors/`.
+  - **F8 = "Chất lượng dữ liệu theo lô"** (`src/viz_ingest.py`, `F08_chat_luong_theo_lo_{report,slide}.png`):
+    strip plot theo lô của tương quan với mẫu các lô khác và tỷ lệ call P; mẫu `qc_outlier` khoanh đen.
+    **Giả định cần TV1 xác nhận:** tài liệu "Kế hoạch giai đoạn 2 (hướng mới)" chưa có trong repo; F8 cũ
+    (hiệu năng theo k) phục vụ H2 đã bỏ ở ADR-014, còn lịch mới giao F8 cho việc 2.4 "Nhập theo lô, chất lượng".
+  - **F10 bản cuối:** đầu vào tầng curated qua `make_preprocess()` của TV3 (bỏ bước log10 tạm và bộ lọc
+    cảnh báo của ADR-008 — chạy với `-W error::UserWarning` không còn cảnh báo nào); hình vẽ qua `src/viz.py`
+    (10/16 pt, 300/150 dpi, xám + một màu nhấn cho "CV sai", nhãn trực tiếp; bản slide bỏ chú thích phụ);
+    số lần hoán vị và trung bình trên hình tính từ dữ liệu. F11 vẽ cùng kiểu; bản cuối do TV1 vẽ (lịch mới).
+  - **Theo quy ước dữ liệu ADR-014**, mọi bước học của `make evaluate` chỉ dùng 38 mẫu huấn luyện:
+    `nested_cv`, `wrong_cv` và thí nghiệm selection bias chạy trên 38 mẫu (trước đây 72);
+    `original_split` học 38 rồi chấm 34; `loocv` không đổi. Cột `data` của `summary_evaluation.csv` ghi rõ.
+- **Kết quả (`make evaluate`, 100 hoán vị, 12/11/2026):** nhãn thật — CV đúng 0.951 ± 0.019, CV sai
+  1.000 ± 0.000; nhãn hoán vị — CV đúng 0.510 ± 0.089, CV sai **0.826 ± 0.065** → H3 vẫn được xác nhận.
+  `original_split` 0.964 (AUC 0.996; 33/34 đúng, Wilson 95% [0.851, 0.995]; McNemar với lớp đa số
+  p = 0.00024); `nested_cv` trên 38 mẫu 0.922 ± 0.137 (fold chỉ ~8 mẫu nên SD lớn).
+- **Kiểm thử:** `tests/test_viz_ingest.py` (2), 2 test hồi quy F10 trong `tests/test_evaluate.py`, test bộ demo.
+
 ## ADR-060 — Chú giải 50 gen đặc trưng phân biệt ALL/AML (`gene_annotations.csv`)
 - **Ngày:** 14/11/2026 · **Người quyết định:** TV5 (theo hợp đồng ADR-051 với TV4)
 - **Bối cảnh:** TV4 (`src/gene_explorer.py`, ADR-051) và TV6 (dashboard) cần dữ liệu chú giải chức năng sinh học, dòng tế bào và liên kết cơ sở dữ liệu cho các gen xếp hạng hàng đầu để người dùng hiểu ý nghĩa sinh học thay vì chỉ nhìn mã probe Affymetrix hoặc tên mô tả thô.
@@ -264,8 +446,17 @@ tái lập được và truy ngược về nguồn.
 | 28/10/2026 | 1.4: `src/viz.py` (F2, F2b, F3, F4a–c, F4e), `style_guide.md`, `notebooks/01_eda.ipynb`, `tests/test_viz.py`; F04d giữ nguyên của TV1 | ADR-011 | TV6 |
 | 01/11/2026 | 1.5: sửa bảng chéo lệch `sample_id`, SOM qua 10 seed, notebook tự sinh CSV + F05/F05b/F05c; H5 chỉ ủng hộ ở mức ALL/AML | ADR-012 | TV1 |
 | 04/11/2026 | 2.4: `mcnemar_test` ghép theo `sample_id`; F11 giữ cột "uncertain"; `nested_cv` có vòng trong chọn k, C; thêm bộ golden-file 19 testcase | ADR-013 | TV2 |
-| 09/11/2026 | Đổi hướng giai đoạn 2 sang quản trị dữ liệu và dashboard; dựng khung file, lệnh `make`, giữ trước số ADR | ADR-014 | TV1 (giảng viên duyệt) |
+| 09/11/2026 | Đổi hướng giai đoạn 2 sang quản trị dữ liệu và dashboard; dựng khung file, lệnh `make`, giữ trước số ADR | ADR-014 | TV1 |
 | 01/11/2026 | 2.2: `src/features.py` bản 1 — 6 bộ chọn gen + `make_selector`, luôn đúng k gen, snr/ttest cân bằng hai phía | ADR-050 | TV4 |
 | 12/11/2026 | 2.2 đổi sang Khám phá gen theo kế hoạch mới: `src/gene_explorer.py`, thay thế ADR-050; schema `gene_annotations.csv` cho TV5 | ADR-051 | TV4 |
+| 12/11/2026 | 2.4: `src/ingest.py` theo giao diện ADR-014 — 4 lô theo nguồn, chặn lô lỗi, nhật ký, `validate_new_sample(path)`; tách `quality.sample_qc()` dùng chung | ADR-030 | TV2 |
+| 15/11/2026 | 2.1: Golub weighted voting chuẩn hóa z-score theo train, SD chia n − 1, n lẻ báo lỗi, PS < 0,3 là uncertain | ADR-020 | TV1 |
+| 23/11/2026 | 2.1 tuần 2: `loocv()` (36/36 khớp bài báo), test 33 chắc chắn / 32 đúng (sửa số cộng nhầm 32/31), `patient_profile()` | ADR-020 | TV1 |
+| 22/11/2026 | 2.6: vẽ lại F01, F04d bằng `viz.py` (6,5 in, chữ ≥ 10 pt); loại mô BM xám nhạt, PB đen | ADR-070 | TV6 |
+| 17/11/2026 | 2.2 bản 2: độ tin cậy (P/A theo lớp), độ vững, lô mới (`marker_consistency`, `batch_anomalies`), đọc kho DuckDB, `src/viz_gene.py`; St-Jude 41 giữ chiều, 0 đảo chiều | ADR-052 | TV4 |
+| 18/11/2026 | 2.2: `marker_consistency` thêm kiểm định hoán vị trong lô (St-Jude p = 2/56 ≈ 0,036) và cột `batch_diff_sd` | ADR-052 | TV4 |
+| 15/11/2026 | 2.3 bản 1: kho DuckDB `golub.duckdb` (`fact_expression` dạng dài, `dim_sample`, `dim_gene`, `dim_batch`); `sql/01` khớp Bảng 2.4 | ADR-040 | TV3 |
+| 23/11/2026 | 2.3 bản 2: `dim_batch`, `fact_qc` (theo mẫu), `log_ingest` lấy từ `src/ingest.py`; chỉ nạp mẫu của lô đạt; `sql/02` chất lượng theo lô | ADR-041 | TV3 |
+| 12/11/2026 | 2.4: bộ file lỗi mẫu sinh bằng code (`--demo`), F8 chất lượng theo lô, F10 bản cuối trên tầng curated theo style guide; mọi bước học chỉ dùng 38 mẫu huấn luyện | ADR-031 | TV2 |
 | 14/11/2026 | 2.5: Chú giải 50 gen đặc trưng phân biệt ALL/AML (`gene_annotations.csv`) theo hợp đồng ADR-051 | ADR-060 | TV5 |
 | 15/11/2026 | 2.5: Tái thiết kế trực quan hóa Golub et al. (1999) Fig 2 và Fig 4 (`src/viz_redesign.py`) | ADR-061 | TV5 |

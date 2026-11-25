@@ -1,0 +1,6 @@
+# Giao diện dashboard (công việc 2.6, TV6). Màu nhấn lấy từ style guide (lớp ALL, Okabe–Ito).
+[theme]
+primaryColor = "#0072B2"
+
+[browser]
+gatherUsageStats = false
