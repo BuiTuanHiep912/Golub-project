@@ -427,10 +427,10 @@ tái lập được và truy ngược về nguồn.
   2. **Fig 3A (Prediction Strength):**
      - Bảng A (LOOCV 38 mẫu): Trực quan hóa giá trị PS từ `results/metrics/golub_ps.csv` (TV1), vạch ngưỡng $PS = 0.30$, phủ dải cảnh báo "Uncertain" ($PS < 0.30$) thể chế hóa cơ chế *Human-in-the-loop*; 36/38 mẫu chắc chắn và đúng 100%, 2 mẫu rơi vào vùng không chắc chắn (#12, #35).
      - Bảng B (Tập kiểm tra 34 mẫu): 33/34 mẫu chắc chắn, 32 đúng; làm nổi bật mẫu 66 ($PS = 0.30004$ sát ranh giới do Tumor Purity thấp); toàn bộ 5 mẫu máu ngoại vi (PB) được phân loại đúng; định vị mẫu không chắc chắn (#67).
-  3. **Fig 4 (Independent Test Set & Error Analysis):**
-     - Bảng A: Biểu đồ ngang xác suất dự đoán P(AML) cho toàn bộ 34 bệnh nhân tập kiểm tra độc lập, phân màu theo kết quả phân loại (ALL đúng, AML đúng, Sai phân loại), vạch rõ ngưỡng quyết định 0.5 và vùng ranh giới/nghi ngờ ([0.3, 0.7]).
+  3. **F04 (hình bổ sung, phân tích lỗi Logistic Regression):**
+     - Bảng A: Xác suất lớp AML do Logistic Regression ước tính. Mô hình đọc dữ liệu curated log10, fit trên 38 mẫu train và dự đoán 34 mẫu test. Ngưỡng phân loại là 0,5 và dải 0,3–0,7 dùng làm tham chiếu trực quan.
      - Bảng B: Dải kiểm định Quản trị dữ liệu (Governance Tracks) gồm Loại mô (BM vs PB) và Nguồn bệnh viện (DFCI, CALGB, CCG, St-Jude).
-     - Điểm nhấn lâm sàng: Làm nổi bật mẫu 66 (mẫu AML duy nhất bị mô hình đoán nhầm thành ALL, khớp với độ tin cậy thấp PS = 0.11 trong bài báo gốc); khẳng định 5 mẫu máu ngoại vi (PB) vẫn được mô hình phân loại chính xác.
+     - Kết quả Logistic Regression: 33/34 mẫu đúng, gồm cả 10 mẫu máu ngoại vi (PB). Mẫu 66 (AML, CCG, BM) được dự đoán thành ALL.
   4. **Quy chuẩn đồ họa:** Đủ 2 phiên bản `report` (300 dpi, chữ >= 10 pt) và `slide` (150 dpi, chữ >= 16 pt) lưu tại `results/figures/report/` và `results/figures/slides/`. Bảng màu Okabe-Ito: ALL (`#0072B2`), AML (`#E69F00`).
 - **Kiểm thử:** Đã bổ sung `tests/test_viz_redesign.py` (6 test) kiểm tra việc sinh hình, kích thước, định dạng và tính hợp lệ cho cả 3 hình; toàn bộ test đạt `PASSED`.
 

@@ -102,6 +102,8 @@ def test_plot_fig4_error_analysis_returns_figure(mock_discovery_data, mock_predi
     for mode in ("report", "slide"):
         fig = plot_fig4_error_analysis(mock_predictions, samples, mode=mode)
         assert isinstance(fig, plt.Figure)
+        assert "1/8 mẫu phân loại sai" in fig.axes[0].get_title(loc="left")
+        assert "PB (Máu ngoại vi, n=4)" in [text.get_text() for text in fig.axes[1].get_legend().get_texts()]
         plt.close(fig)
 
 

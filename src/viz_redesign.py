@@ -3,7 +3,7 @@
 Tái thiết kế các hình kinh điển của bài báo Golub et al. (1999) theo chuẩn trực quan hóa hiện đại:
     - Fig 2: Phân cụm không giám sát bằng Self-Organizing Maps (SOM 1x2 và 2x2), đối chiếu cấu trúc lớp và chiếu không gian biểu hiện gen.
     - Fig 3A: (Dành riêng cho đợt tích hợp TV1) Phân bố Prediction Strength (PS) của mô hình Weighted Voting.
-    - Fig 4: Phân tích dự đoán trên tập kiểm tra độc lập (34 mẫu), làm nổi bật mẫu biên (mẫu 66), 5 mẫu máu ngoại vi (PB) và các yếu tố gây nhiễu từ nguồn thu thập mẫu.
+    - F04 (hình bổ sung của nhóm): Phân tích lỗi Logistic Regression trên tập kiểm tra độc lập theo loại mô và nguồn thu thập.
 
 Tuân thủ nghiêm ngặt Style Guide (docs/style_guide.md) và ADR-014:
     - Bảng màu Okabe-Ito: ALL (#0072B2), AML (#E69F00), an toàn cho người mù màu.
@@ -21,7 +21,6 @@ Chạy trực tiếp:
 """
 from __future__ import annotations
 
-import warnings
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -209,7 +208,7 @@ def plot_fig2_som_redesign(
 
 
 # --------------------------------------------------------------------------------------
-# 3. Tái thiết kế Fig 4: Error Analysis on Independent Test Set
+# 3. F04: Phân tích lỗi Logistic Regression trên tập kiểm tra độc lập
 # --------------------------------------------------------------------------------------
 
 def plot_fig4_error_analysis(
@@ -217,7 +216,7 @@ def plot_fig4_error_analysis(
     samples: pd.DataFrame,
     mode: str = "report"
 ) -> plt.Figure:
-    """Tái thiết kế Hình 4 của bài báo Golub 1999: Phân tích dự đoán trên tập kiểm tra độc lập (34 mẫu).
+    """Trực quan hóa kết quả Logistic Regression trên tập kiểm tra độc lập.
 
     Hiển thị:
         (A) Biểu đồ ngang xác suất dự đoán P(AML) của từng bệnh nhân, làm nổi bật ca phân loại sai (Mẫu 66).
@@ -230,6 +229,8 @@ def plot_fig4_error_analysis(
         # Sắp xếp bệnh nhân theo xác suất P(AML) tăng dần
         merged = merged.sort_values(by=["score", "y_true"], ascending=[True, True])
         n_samples = len(merged)
+        wrong = merged["y_pred"].ne(merged["y_true"])
+        n_pb = merged["tissue"].eq("PB").sum()
 
         # Chiều cao linh hoạt để đọc rõ mã 34 bệnh nhân
         h = figsize(mode, height_ratio=0.75)[1]
@@ -256,15 +257,15 @@ def plot_fig4_error_analysis(
         scores = merged["score"].values
         ax_main.barh(y_positions, scores, color=bar_colors, height=0.68, alpha=0.9, edgecolor="none")
 
-        # Ngưỡng phân định lâm sàng
+        # Ngưỡng phân loại của mô hình
         ax_main.axvline(0.5, color=NEUTRAL, linestyle="--", linewidth=1.2, label="Ngưỡng phân loại (0.5)")
-        ax_main.axvspan(0.3, 0.7, color=NEUTRAL_LIGHT, alpha=0.25, label="Vùng nghi ngờ (PS < 0.3)")
+        ax_main.axvspan(0.3, 0.7, color=NEUTRAL_LIGHT, alpha=0.25, label="Dải điểm AML 0,3–0,7")
 
         # Ghi chú ca đặc biệt Mẫu 66
-        if 66 in merged.index:
+        if 66 in merged.index and wrong.loc[66]:
             m66_idx = np.where(merged.index == 66)[0][0]
             ax_main.annotate(
-                "Mẫu 66: AML thực tế\n(CCG, BM) -> Đoán nhầm ALL",
+                f"Mẫu 66: AML → ALL\nĐiểm AML = {merged.loc[66, 'score']:.3f}",
                 xy=(merged.loc[66, "score"], m66_idx),
                 xytext=(merged.loc[66, "score"] + 0.22, m66_idx - 1.5),
                 arrowprops=dict(arrowstyle="->", color="#D55E00", lw=1.5),
@@ -275,20 +276,22 @@ def plot_fig4_error_analysis(
         ax_main.set_yticks(y_positions)
         yticklabels = [f"#{idx} ({row['y_true']})" for idx, row in merged.iterrows()]
         ax_main.set_yticklabels(yticklabels, fontsize=style_rc(mode)["font.size"] - 1.5)
-        ax_main.set_xlabel("Xác suất dự đoán P(AML) — Điểm số mô hình")
+        ax_main.set_xlabel("Xác suất lớp AML do Logistic Regression ước tính")
         ax_main.set_xlim(-0.02, 1.05)
-        ax_main.set_title("(A) Phân bố xác suất dự đoán trên 34 bệnh nhân độc lập", loc="left")
-        ax_main.legend(frameon=True, loc="upper left", facecolor="white", framealpha=0.9)
+        ax_main.set_title(f"(A) Tập kiểm tra: {wrong.sum()}/{n_samples} mẫu phân loại sai", loc="left")
+        ax_main.legend(
+            handles=[
+                *ax_main.get_legend_handles_labels()[0],
+                Patch(facecolor=CLASS_COLORS["ALL"], label="ALL đúng"),
+                Patch(facecolor=CLASS_COLORS["AML"], label="AML đúng"),
+                Patch(facecolor="#D55E00", label="Sai phân loại"),
+            ],
+            frameon=True, loc="upper left", facecolor="white", framealpha=0.9,
+        )
 
         # ---------------------------------------------------------
         # Bảng metadata: Mô (Tissue) và Nguồn (Source)
         # ---------------------------------------------------------
-        # Track 1: Tissue (BM = 0, PB = 1)
-        tissue_vals = np.array([0 if row["tissue"] == "BM" else 1 for _, row in merged.iterrows()])
-        # Track 2: Source (DFCI=0, CALGB=1, CCG=2, St-Jude=3)
-        src_map = {"DFCI": 0, "CALGB": 1, "CCG": 2, "St-Jude": 3}
-        source_vals = np.array([src_map[row["source"]] for _, row in merged.iterrows()])
-
         # Vẽ 2 cột nhiệt metadata
         ax_meta.scatter(np.zeros(n_samples), y_positions, c=[TISSUE_COLORS[r["tissue"]] for _, r in merged.iterrows()],
                         s=style_rc(mode)["lines.linewidth"] * 30, marker="s", label="Mô")
@@ -305,7 +308,7 @@ def plot_fig4_error_analysis(
         # Chú giải riêng cho metadata
         legend_elements = [
             Line2D([0], [0], marker="s", color="w", markerfacecolor=TISSUE_COLORS["BM"], label="BM (Tủy xương)"),
-            Line2D([0], [0], marker="s", color="w", markerfacecolor=TISSUE_COLORS["PB"], label="PB (Máu ngoại vi - 5 mẫu)"),
+            Line2D([0], [0], marker="s", color="w", markerfacecolor=TISSUE_COLORS["PB"], label=f"PB (Máu ngoại vi, n={n_pb})"),
             Line2D([0], [0], marker="o", color="w", markerfacecolor=SOURCE_COLORS["DFCI"], label="DFCI"),
             Line2D([0], [0], marker="o", color="w", markerfacecolor=SOURCE_COLORS["CALGB"], label="CALGB"),
             Line2D([0], [0], marker="o", color="w", markerfacecolor=SOURCE_COLORS["CCG"], label="CCG"),
@@ -314,7 +317,7 @@ def plot_fig4_error_analysis(
         ax_meta.legend(handles=legend_elements, loc="lower right", bbox_to_anchor=(1.05, 0.0),
                        fontsize=style_rc(mode)["font.size"] - 2, frameon=True, facecolor="white")
 
-        fig.suptitle("F04. Tái thiết kế Đánh giá & Phân tích lỗi trên tập kiểm tra độc lập (Golub et al., 1999, Fig. 4)",
+        fig.suptitle("F04. Phân tích lỗi Logistic Regression trên tập kiểm tra độc lập",
                      y=1.02, fontweight="bold")
         return fig
 
@@ -499,13 +502,10 @@ def generate_all_redesigned_figures() -> None:
     """Sinh toàn bộ hình F02, F03a và F04 ở cả hai phiên bản report và slide."""
     print("--- Bắt đầu sinh hình F02, F03a và F04 tái thiết kế ---")
     X_cu, samples = load_golub("curated")
-    X_cl, _ = load_golub("cleansed")
 
     # 1. Chạy đánh giá để lấy bảng dự đoán 34 mẫu kiểm tra cho Fig 4
     pipe = _baseline_pipeline(k=50)
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        res = evaluate(pipe, X_cl, samples["class"], scheme="original_split")
+    res = evaluate(pipe, X_cu, samples["class"], scheme="original_split")
     preds = res["predictions"]
 
     for mode in ("report", "slide"):
