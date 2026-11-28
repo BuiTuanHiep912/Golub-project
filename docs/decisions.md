@@ -493,6 +493,34 @@ tái lập được và truy ngược về nguồn.
   p = 0.00024); `nested_cv` trên 38 mẫu 0.922 ± 0.137 (fold chỉ ~8 mẫu nên SD lớn).
 - **Kiểm thử:** `tests/test_viz_ingest.py` (2), 2 test hồi quy F10 trong `tests/test_evaluate.py`, test bộ demo.
 
+## ADR-060 — Chú giải 50 gen đặc trưng phân biệt ALL/AML (`gene_annotations.csv`)
+- **Ngày:** 14/11/2026 · **Người quyết định:** TV5 (theo hợp đồng ADR-051 với TV4)
+- **Bối cảnh:** TV4 (`src/gene_explorer.py`, ADR-051) và TV6 (dashboard) cần dữ liệu chú giải chức năng sinh học, dòng tế bào và liên kết cơ sở dữ liệu cho các gen xếp hạng hàng đầu để người dùng hiểu ý nghĩa sinh học thay vì chỉ nhìn mã probe Affymetrix hoặc tên mô tả thô.
+- **Quyết định:** Tạo `results/gene_lists/gene_annotations.csv` cho top 50 gen phân biệt ALL/AML từ `gene_ranking.csv` (1.6), tuân thủ đúng hợp đồng 6 cột của ADR-051:
+  `probe_id, gene_symbol, function, cell_lineage, source_url, verified`.
+- **Nguyên tắc chú giải:**
+  1. **Nguồn gốc:** Tra cứu chính xác từ cơ sở dữ liệu NCBI Gene / GeneCards; `source_url` trỏ về trang thông tin định danh gen chuẩn (ví dụ `https://www.ncbi.nlm.nih.gov/gene/<GeneID>`).
+  2. **Ký hiệu gen:** Cập nhật ký hiệu chuẩn HGNC cho các probe có mô tả thô (ví dụ: `X95735_at` -> `ZYX`, `U50136_rna1_at` -> `LTC4S`, `M84526_at` -> `CFD`, `U05259_rna1_at` -> `CD79A`, `X82240_rna1_at` -> `TCL1A`).
+  3. **Chức năng sinh học (`function`):** Mô tả ngắn gọn cơ chế hoạt động, phân loại phân tử, vai trò trong bệnh học bạch cầu (leukemia) và ý nghĩa phân biệt ALL/AML.
+  4. **Dòng tế bào (`cell_lineage`):** Xác định thuộc dòng tủy (`myeloid`) hay dòng lympho (`lymphoid`), giải thích trực tiếp tại sao gen biểu hiện lệch mạnh giữa AML và ALL.
+  5. **Tính xác thực (`verified`):** Gán `yes` cho 49 gen đã kiểm chứng rõ ràng qua NCBI Gene; gán `no` cho các gen cảm ứng chưa đặc trưng rõ (`L47738_at`), không tự ý đoán chức năng theo nguyên tắc quản trị dữ liệu trung thực.
+- **Kiểm thử:** Đã kiểm tra tương thích 100% với hàm `annotate()` của `src/gene_explorer.py` và toàn bộ 113 bài kiểm thử `pytest tests/ -v` đều đạt `PASSED`.
+
+## ADR-061 — Tái thiết kế trực quan hóa Golub et al. (1999) Fig 2, Fig 3A và Fig 4 (`src/viz_redesign.py`)
+- **Ngày:** 15/11/2026 (bổ sung Fig 3A ngày 25/11/2026) · **Người quyết định:** TV5 (theo ADR-014 của TV1 và Kế hoạch Giai đoạn 2)
+- **Bối cảnh:** Các hình gốc trong bài báo Golub et al. (Science, 1999) sử dụng công nghệ đồ họa cũ (thang xám, thiếu phân tách thành phần lâm sàng, biểu đồ thanh mật độ thô khó quan sát chi tiết từng bệnh nhân). Mục tiêu môn học yêu cầu trực quan hóa hiện đại, an toàn cho người mù màu và tích hợp góc nhìn Quản trị dữ liệu (Data Governance).
+- **Quyết định:** Tạo module `src/viz_redesign.py` và notebook `notebooks/05_viz_redesign.ipynb` độc lập với `src/viz.py` của TV6:
+  1. **Fig. 2 và Fig. 4:** Fig. 2 dùng SNR trên 38 mẫu train và 400 hoán vị nhãn cho hai hướng ALL/AML. Fig. 4 lọc biến thiên năm lần và fit hai SOM trên train. Panel A/C cho thành phần cụm. Panel B so sánh PS của mô hình dự đoán cụm ở LOOCV và test với 100 lần hoán vị giữ kích thước cụm. Panel D so sánh PS ở LOOCV của sáu cặp cụm. Bộ dự đoán cụm dùng Weighted Voting với 20 probe.
+  2. **Fig 3A (Prediction Strength):**
+     - Bảng A (LOOCV 38 mẫu): Trực quan hóa giá trị PS từ `results/metrics/golub_ps.csv` (TV1), vạch ngưỡng $PS = 0.30$, phủ dải cảnh báo "Uncertain" ($PS < 0.30$) thể chế hóa cơ chế *Human-in-the-loop*; 36/38 mẫu chắc chắn và đúng 100%, 2 mẫu rơi vào vùng không chắc chắn (#12, #35).
+     - Bảng B (34 mẫu kiểm tra): 33 mẫu chắc chắn, đúng 32/33. Mẫu 66 được dự đoán thành ALL với PS = 0,30004, sát ngưỡng 0,30. Trong 10 mẫu máu ngoại vi, 9 mẫu được dự đoán đúng và mẫu 67 có nhãn `uncertain`.
+  3. **F04 (hình bổ sung, phân tích lỗi Logistic Regression):**
+     - Bảng A: Xác suất lớp AML do Logistic Regression ước tính. Mô hình đọc dữ liệu curated log10, fit trên 38 mẫu train và dự đoán 34 mẫu test. Ngưỡng phân loại là 0,5 và dải 0,3–0,7 dùng làm tham chiếu trực quan.
+     - Bảng B: Dải kiểm định Quản trị dữ liệu (Governance Tracks) gồm Loại mô (BM vs PB) và Nguồn bệnh viện (DFCI, CALGB, CCG, St-Jude).
+     - Kết quả Logistic Regression: 33/34 mẫu đúng, gồm cả 10 mẫu máu ngoại vi (PB). Mẫu 66 (AML, CCG, BM) được dự đoán thành ALL.
+  4. **Quy chuẩn đồ họa:** Đủ 2 phiên bản `report` (300 dpi) và `slide` (150 dpi) lưu tại `results/figures/report/` và `results/figures/slides/`. Bảng màu Okabe-Ito: ALL (`#0072B2`), AML (`#E69F00`).
+- **Kiểm thử:** `tests/test_viz_redesign.py` kiểm tra dữ liệu train/test, các panel, thống kê dự đoán và tám tệp hình.
+
 ## Nhật ký nhanh (mục 5.2 kế hoạch)
 
 | Ngày | Quyết định | Lý do | Người quyết định |
@@ -525,3 +553,5 @@ tái lập được và truy ngược về nguồn.
 | 15/11/2026 | 2.3 bản 1: kho DuckDB `golub.duckdb` (`fact_expression` dạng dài, `dim_sample`, `dim_gene`, `dim_batch`); `sql/01` khớp Bảng 2.4 | ADR-040 | TV3 |
 | 23/11/2026 | 2.3 bản 2: `dim_batch`, `fact_qc` (theo mẫu), `log_ingest` lấy từ `src/ingest.py`; chỉ nạp mẫu của lô đạt; `sql/02` chất lượng theo lô | ADR-041 | TV3 |
 | 12/11/2026 | 2.4: bộ file lỗi mẫu sinh bằng code (`--demo`), F8 chất lượng theo lô, F10 bản cuối trên tầng curated theo style guide; mọi bước học chỉ dùng 38 mẫu huấn luyện | ADR-031 | TV2 |
+| 14/11/2026 | 2.5: Chú giải 50 gen đặc trưng phân biệt ALL/AML (`gene_annotations.csv`) theo hợp đồng ADR-051 | ADR-060 | TV5 |
+| 15/11/2026 | 2.5: Tái thiết kế trực quan hóa Golub et al. (1999) Fig 2, Fig 3A và Fig 4 (`src/viz_redesign.py`) | ADR-061 | TV5 |

@@ -27,7 +27,7 @@ M31211_s_at,MYL1,Myosin light chain 1 - chuỗi nhẹ myosin cơ xương; vai tr
 M31166_at,PTX3,Pentraxin 3 - protein pha cấp; sản xuất bởi đại thực bào và tế bào nội mô khi kích thích IL-1β/TNFα; đáp ứng miễn dịch bẩm sinh,myeloid,https://www.ncbi.nlm.nih.gov/gene/5806,yes
 J05243_at,SPTAN1,Spectrin alpha non-erythrocytic 1 (alpha-fodrin) - protein khung xương tế bào; duy trì hình dạng và tính toàn vẹn màng tế bào,lymphoid,https://www.ncbi.nlm.nih.gov/gene/6709,yes
 X07743_at,PLEK,Pleckstrin - cơ chất chính của protein kinase C trong tiểu cầu; liên quan đến hoạt hóa tiểu cầu và bạch cầu trung tính,myeloid,https://www.ncbi.nlm.nih.gov/gene/5341,yes
-X85116_rna1_s_at,EPB72,Erythrocyte membrane protein band 7.2 (Stomatin) - protein màng; điều hòa kênh ion trên màng hồng cầu,myeloid,https://www.ncbi.nlm.nih.gov/gene/2015,yes
+X85116_rna1_s_at,STOM,Erythrocyte membrane protein band 7.2 (Stomatin) - protein màng; điều hòa kênh ion trên màng hồng cầu,myeloid,https://www.ncbi.nlm.nih.gov/gene/2040,yes
 M28170_at,CD19,CD19 antigen - thụ thể bề mặt đặc trưng tế bào B; đồng thụ thể của BCR; mục tiêu CAR-T trong điều trị B-ALL,lymphoid,https://www.ncbi.nlm.nih.gov/gene/930,yes
 M63138_at,CTSD,Cathepsin D - aspartyl protease lysosome; tham gia phân giải protein nội bào và trình diện kháng nguyên,myeloid,https://www.ncbi.nlm.nih.gov/gene/1509,yes
 L41870_at,RB1,Retinoblastoma protein 1 - protein ức chế khối u; kiểm soát chu kỳ tế bào G1/S; mất RB1 liên quan đến nhiều loại ung thư,lymphoid,https://www.ncbi.nlm.nih.gov/gene/5925,yes
@@ -40,7 +40,7 @@ X04085_rna1_at,CAT,Catalase - enzyme phân giải H2O2 thành nước và oxy; b
 M98399_s_at,CD36,CD36 antigen - thụ thể scavenger; nhận diện oxLDL và thrombospondin; biểu hiện trên monocyte và tiểu cầu,myeloid,https://www.ncbi.nlm.nih.gov/gene/948,yes
 M83652_s_at,CFP,Properdin (complement factor P) - ổn định C3 convertase con đường bổ thể thay thế; biểu hiện ở bạch cầu trung tính,myeloid,https://www.ncbi.nlm.nih.gov/gene/5199,yes
 M91432_at,ACADM,Acyl-CoA dehydrogenase medium chain - enzyme beta-oxy hóa acid béo chuỗi trung bình trong ty thể,lymphoid,https://www.ncbi.nlm.nih.gov/gene/34,yes
-X17042_at,PRG1,Proteoglycan 1 (Serglycin) - proteoglycan trong hạt bài tiết; lưu trữ protease và histamine trong hạt tế bào mast/bạch cầu,myeloid,https://www.ncbi.nlm.nih.gov/gene/5552,yes
+X17042_at,SRGN,Proteoglycan 1 (Serglycin) - proteoglycan trong hạt bài tiết; lưu trữ protease và histamine trong hạt tế bào mast/bạch cầu,myeloid,https://www.ncbi.nlm.nih.gov/gene/5552,yes
 M54995_at,PPBP,Pro-platelet basic protein (CXCL7) - chemokine giải phóng từ tiểu cầu; thúc đẩy tạo máu và hóa hướng động bạch cầu trung tính,myeloid,https://www.ncbi.nlm.nih.gov/gene/5473,yes
 U05259_rna1_at,CD79A,MB-1/Igα - thành phần phức hợp thụ thể tế bào B (BCR); truyền tín hiệu từ BCR; marker dòng tế bào B,lymphoid,https://www.ncbi.nlm.nih.gov/gene/973,yes
 L33930_s_at,CD24,CD24 signal transducer - GPI-anchored glycoprotein bề mặt; marker biệt hóa tế bào B; điều hòa tăng sinh tế bào B,lymphoid,https://www.ncbi.nlm.nih.gov/gene/100133941,yes
