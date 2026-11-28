@@ -457,6 +457,26 @@ def test_batch_anomalies_flags_outlier_sample(env):
     assert top["side"] == "cao hơn" and top["severity"] > 0
     assert "mẫu 72" in top["reason"]
     assert a["severity"].is_monotonic_decreasing
+    assert bool(top["notable"]) is True                           # CD33 = 5,0: vượt xa ngưỡng của mẫu train
+    assert a.attrs["n_notable_samples"] >= 1 and a.attrs["baseline_n"] == 38
+    assert "Mức nền" in a.attrs["note"] and "72" in a.attrs["note"]
+
+
+def test_reference_baseline_leave_one_out():
+    ref = pd.DataFrame({"g": [0.0, 1.0, 2.0, 3.0, 10.0]}, index=[1, 2, 3, 4, 5])
+    base = ge._reference_baseline(ref)
+    assert base["n"] == 5 and base["n_flagged"] == 2              # chỉ mẫu đầu (0) và mẫu cuối (10) ngoài khoảng
+    gap_last = 7.0 / ref["g"].iloc[:4].std()                      # 10 so với max 3, chia SD của 4 mẫu còn lại
+    assert base["cutoff"] == pytest.approx(np.quantile([1.0 / ref["g"].iloc[1:].std(), 0, 0, 0, gap_last],
+                                                       ge.BASELINE_QUANTILE))
+
+
+def test_out_of_range_severity_zero_inside():
+    ref = pd.DataFrame({"a": [1.0, 2.0, 3.0], "b": [5.0, 5.0, 5.0]})
+    vals = pd.DataFrame({"a": [2.5, 4.0], "b": [5.0, 6.0]})
+    sev = ge._out_of_range_severity(vals, ref)
+    assert sev.loc[0, "a"] == 0 and sev.loc[1, "a"] == pytest.approx(1.0)   # (4 − 3) / SD 1
+    assert (sev["b"] == 0).all()                                  # SD = 0: không chia được, coi là 0
 
 
 def test_batch_anomalies_does_not_use_batch_labels(env, monkeypatch):
@@ -466,6 +486,123 @@ def test_batch_anomalies_does_not_use_batch_labels(env, monkeypatch):
     monkeypatch.setattr(ge, "_load_expression", lambda: (X, samples))
     after = ge.batch_anomalies(source="CCG")
     pd.testing.assert_frame_equal(before, after)
+
+
+# ---------------------------------------------------------------- yếu tố khác ngoài ALL/AML
+
+@pytest.fixture
+def factors(monkeypatch):
+    """Dữ liệu giả có gen kiểu B-ALL, gen giới tính, gen bạch cầu hạt và gen khác theo phòng lab."""
+    samples = _samples()
+    rng = np.random.default_rng(3)
+    n = len(samples)
+    sub, src, cls = samples["subtype"], samples["source"], samples["class"]
+    sex = np.where(samples.index % 2 == 0, "M", "F").astype(object)
+    sex[samples.index.get_indexer([5, 6, 7])] = None             # 3 mẫu không ghi giới tính
+    samples["sex"] = sex
+    true_male = samples["sex"].eq("M").to_numpy().copy()
+    true_male[samples.index.get_loc(9)] = True                   # mẫu 9 ghi nữ nhưng thực ra nam
+    true_male[samples.index.get_indexer([5, 6, 7])] = [True, False, True]
+    noise = lambda: rng.normal(0, 0.03, n)                       # noqa: E731
+    cols = {
+        "B_ONLY_at": np.where(sub.eq("B-ALL"), 3.0, 2.0) + noise(),   # như IGB
+        "BOTH_at": np.where(cls.eq("ALL"), 3.0, 2.0) + noise(),
+        "AMLHI_at": np.where(cls.eq("AML"), 3.0, 2.0) + noise(),
+        ge.SEX_Y_PROBE: np.where(true_male, 3.3, 2.0) + noise(),
+        ge.SEX_XIST_PROBE: np.where(true_male, 2.2, 2.7) + noise(),
+        "LAB_at": np.where(cls.eq("AML") & src.eq("St-Jude"), 2.8, 2.0) + noise(),
+    }
+    gran = np.full(n, 2.0)
+    gran[samples.index.get_loc(70)] = 3.8                        # mẫu CCG (kiểm tra) lẫn bạch cầu hạt
+    gran[samples.index.get_loc(46)] = 3.6                        # mẫu St-Jude B-ALL (kiểm tra)
+    for p in ge.GRANULOCYTE_PROBES:
+        cols[p] = gran + noise()
+    cols["BOTH_at"] = cols["BOTH_at"] + np.where(cls.eq("ALL"), (gran - 2.0), 0)   # gen dấu ấn đi theo điểm
+    for i in range(30):
+        cols[f"N{i}_at"] = 2.5 + rng.normal(0, 0.1, n)
+    X = pd.DataFrame(cols, index=samples.index)
+    monkeypatch.setattr(ge, "_load_expression", lambda: (X, samples))
+    probes = ["B_ONLY_at", "BOTH_at", "AMLHI_at", "LAB_at"] + [f"N{i}_at" for i in range(30)]
+    ranking = pd.DataFrame({"probe_id": probes, "rank": range(1, len(probes) + 1),
+                            "snr": [1.2, 1.1, -1.3, 0.1] + [0.01] * 30,
+                            "gene_symbol": ["IGBX", "BOTH", "AMLG", "LABG"] + [""] * 30})
+    monkeypatch.setattr(ge, "_load_ranking", lambda: ranking.copy())
+    return {"X": X, "samples": samples}
+
+
+def test_subtype_check_flags_b_only_gene(factors):
+    s = ge.subtype_check(n_per_side=2).set_index("probe_id")
+    assert s.loc["B_ONLY_at", "pattern"] == "Chỉ B-ALL"
+    assert s.loc["B_ONLY_at", "pct_floor_T"] > 0.5 or s.loc["B_ONLY_at", "mean_T"] < 2.1
+    assert s.loc["BOTH_at", "pattern"] == "Cả B-ALL và T-ALL"
+    assert s.loc["AMLHI_at", "pattern"] == "Cả B-ALL và T-ALL" and s.loc["AMLHI_at", "direction"] == "AML"
+    assert "IGBX" in s.attrs["note"] and s.attrs["counts"]["Chỉ B-ALL"] == 1
+
+
+def test_subtype_check_single_probe_and_unknown(factors):
+    assert ge.subtype_check(probes="B_ONLY_at").iloc[0]["pattern"] == "Chỉ B-ALL"
+    with pytest.raises(KeyError):
+        ge.subtype_check(probes=["KHONGCO_at"])
+
+
+def test_subtype_contrast_finds_b_cell_gene(factors):
+    c = ge.subtype_contrast(n_perm=50)
+    assert c.iloc[0]["probe_id"] == "B_ONLY_at" and c.iloc[0]["snr"] < 0      # cao ở B-ALL, thấp ở T-ALL
+    assert (c.attrs["n_T"], c.attrs["n_B"]) == (3, 44)
+    assert [r["threshold"] for r in c.attrs["thresholds"]] == [0.5, 1.0, 1.5]
+    assert all(r["observed"] >= 1 for r in c.attrs["thresholds"])     # ít nhất gen kiểu B-ALL vượt mọi ngưỡng
+    assert c["snr"].abs().is_monotonic_decreasing                      # so với xáo nhãn: kiểm tra trên dữ liệu thật
+
+
+def test_marker_stability_frequencies(factors):
+    st = ge.marker_stability(n_boot=20, n_per_side=2)
+    assert st["freq"].between(0, 1).all() and st["freq"].is_monotonic_decreasing
+    assert set(st["probe_id"]) == set(ge._marker_genes(2)["probe_id"])
+    assert 0 < st.attrs["mean_jaccard"] <= 1 and st.attrs["min_jaccard"] <= st.attrs["mean_jaccard"]
+    assert st.set_index("probe_id").loc["B_ONLY_at", "freq"] >= 0.8      # gen tách lớp rõ thì luôn được chọn lại
+
+
+def test_marker_correlation_groups_and_errors(factors):
+    c = ge.marker_correlation("train", n_per_side=2)
+    assert {"mean_abs_r", "pc1_share", "n_effective", "modules"} <= set(c.attrs)
+    assert 1 <= c.attrs["n_effective"] <= 3 and 0 < c.attrs["pc1_share"] <= 1
+    assert (c["module_size"] >= 3).all()
+    with pytest.raises(ValueError):
+        ge.marker_correlation("B-ALL")
+
+
+def test_sex_check_mismatch_missing_and_no_metadata_change(factors):
+    before = factors["samples"]["sex"].copy()
+    sx = ge.sex_check().set_index("sample_id")
+    assert sx.loc[9, "status"] == "Lệch metadata" and sx.loc[9, "sex_inferred"] == "M"
+    assert (sx.loc[[5, 6, 7], "status"] == "Metadata thiếu").all()
+    assert sx.loc[[5, 6, 7], "sex_inferred"].tolist() == ["M", "F", "M"]
+    assert sx.attrs["n_mismatch"] == 1 and sx.attrs["n_missing"] == 3
+    assert sx.iloc[0].name == 9                                   # mẫu lệch đứng đầu bảng
+    pd.testing.assert_series_equal(factors["samples"]["sex"], before)   # không sửa metadata
+
+
+def test_lab_effect_finds_lab_gene_within_aml(factors):
+    le = ge.lab_effect("AML", n_per_side=2)
+    assert le.attrs["labs"] == ["CALGB", "St-Jude", "CCG"]
+    assert le.iloc[0]["probe_id"] == "LAB_at" and le.iloc[0]["q_value"] < 0.05
+    assert le.attrs["n_sig"] >= 1 and "LAB_at" not in le.attrs["markers_affected"]
+    with pytest.raises(ValueError):
+        ge.lab_effect("T-ALL")                                    # chỉ một lab (DFCI)
+
+
+def test_bh_matches_manual():
+    q = ge._bh(np.array([0.01, 0.04, 0.03, np.nan]))
+    assert np.isnan(q[3])
+    assert q[:3] == pytest.approx([0.03, 0.04, 0.04])
+
+
+def test_purity_check_flags_contaminated_test_samples(factors):
+    p = ge.purity_check(n_per_side=2)
+    assert set(p.columns) >= {"sample_id", "value", "class", "source", "split", "above_train"}
+    assert p.attrs["flagged"] == [70, 46]                         # sắp điểm giảm dần
+    assert (p.loc[p["above_train"], "split"] == "test").all()
+    assert "BOTH_at" in p.attrs["tracking_markers"]
 
 
 def test_ranking_table_all_rows(env):
@@ -490,6 +627,41 @@ def test_real_data_stjude_consistency():
     assert c.attrs["n_same"] == 46 and len(c) == 50          # khớp kết quả 1.6
     assert c.attrs["n_flipped"] == 0                          # không gen nào đảo chiều rõ
     assert c.attrs["n_perm"] == 56 and c.attrs["p_perm"] == pytest.approx(2 / 56)   # 2/56 cách xếp đạt ≥ 46
+
+
+@pytest.mark.skipif(not (CURATED_DIR / "X_log10.parquet").exists(), reason="chưa có tầng curated")
+def test_real_data_other_factors():
+    ge.clear_cache()
+    st = ge.subtype_check()
+    only_b = set(st.loc[st["pattern"].eq("Chỉ B-ALL"), "gene_symbol"])
+    assert only_b == {"IGB", "IRF2", "TCL1", "CD24"}    # CD19 không qua bộ lọc trên train
+    sx = ge.sex_check()
+    assert (sx.attrs["n_match"], sx.attrs["n_mismatch"], sx.attrs["n_missing"]) == (47, 2, 23)
+    assert sorted(sx.loc[sx["status"].eq("Lệch metadata"), "sample_id"]) == [18, 60]
+    aml = ge.lab_effect("AML")
+    assert aml.attrs["labs"] == ["CALGB", "St-Jude", "CCG"] and len(aml.attrs["markers_affected"]) == 2
+    stab = ge.marker_stability()
+    assert stab.attrs["n_stable"] == 5 and stab.attrs["mean_jaccard"] == pytest.approx(0.36, abs=0.01)
+    assert ge.marker_correlation("train").attrs["n_effective"] == pytest.approx(3.1, abs=0.1)
+    assert ge.marker_correlation("ALL").attrs["n_effective"] > 9                 # trong cùng lớp: nhiều tín hiệu hơn
+    con = ge.subtype_contrast()
+    assert [r["observed"] for r in con.attrs["thresholds"]] == [415, 72, 23]
+    assert con.attrs["thresholds"][1]["perm_max"] <= 2                # |SNR| > 1: tối đa 2 gen khi xáo nhãn
+    assert con.iloc[0]["probe_id"] == "X03934_at"                     # CD3 delta, cao ở T-ALL
+    pur = ge.purity_check()
+    assert pur.attrs["flagged"] == [60, 43, 59, 56]
+    assert pur.attrs["tracking_markers"] == ["M27783_s_at"]     # ELA2, gen dấu ấn AML hạng 8
+
+
+@pytest.mark.skipif(not (CURATED_DIR / "X_log10.parquet").exists(), reason="chưa có tầng curated")
+def test_real_data_batch_anomalies_baseline():
+    ge.clear_cache()
+    ccg = ge.batch_anomalies(source="CCG")
+    assert ccg["sample_id"].nunique() == 3                    # 3/5 mẫu có gen ngoài khoảng...
+    assert (ccg.attrs["baseline_flagged"], ccg.attrs["baseline_n"]) == (18, 38)   # ...mẫu train cũng 47%
+    assert ccg.attrs["n_notable_samples"] == 0                # nên CCG không có gì đáng chú ý
+    dfci = ge.batch_anomalies(source="DFCI")
+    assert dfci.loc[dfci["notable"], "sample_id"].unique().tolist() == [42]   # LTC4S ở mức sàn
 
 
 @pytest.mark.skipif(not (CURATED_DIR / "X_log10.parquet").exists(), reason="chưa có tầng curated")

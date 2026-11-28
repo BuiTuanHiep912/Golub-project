@@ -42,11 +42,15 @@ except ModuleNotFoundError:
 
 Q_THRESHOLD = 0.05
 CLASS_ORDER = ["ALL", "AML"]
-FACET_ORDER = {"source": ["DFCI", "CALGB", "St-Jude", "CCG"], "tissue": ["BM", "PB"]}
-FACET_LABELS = {"source": "Phòng lab", "tissue": "Loại mô"}
+FACET_ORDER = {"source": ["DFCI", "CALGB", "St-Jude", "CCG"], "tissue": ["BM", "PB"],
+               "subtype": ["B-ALL", "T-ALL", "AML"]}
+FACET_LABELS = {"source": "Phòng lab", "tissue": "Loại mô", "subtype": "Nhóm con"}
 DIRECTION_LABELS = {"ALL": "Cao ở ALL", "AML": "Cao ở AML"}
 FLIPPED_COLOR = "#000000"            # gen đảo chiều: đen, hình chữ X (khác hẳn chấm màu theo lớp)
 ALTAIR_SHAPES = {"ALL": "circle", "AML": "triangle-up"}
+FLOOR_LOG10 = 2.0                    # mức sàn của chip sau threshold [100, 16000] (khớp gene_explorer)
+GROUP_GAP = 0.6                      # khoảng trống giữa hai phòng lab trên trục ngang
+SHADE = "#EFEFEF"                    # nền vùng có cả hai lớp
 
 
 def _need_altair():
@@ -163,6 +167,7 @@ def _faceted_expression(df, counts, facet, order, title):
     return (alt.layer(pts, med, n_text, data=data).properties(width=130, height=320)
             .facet(column=alt.Column(f"{facet}:N", sort=order, title=FACET_LABELS[facet],
                                      header=alt.Header(labelOrient="bottom", titleOrient="bottom")))
+            .resolve_scale(x="independent")            # mỗi ô chỉ hiện lớp có mẫu, không chừa cột n = 0
             .properties(title=title or "Biểu hiện của gen theo lớp (số dưới cột: số mẫu)"))
 
 
@@ -290,58 +295,114 @@ def plot_volcano(ranking: pd.DataFrame, highlight: str | None = None, q_threshol
     return fig
 
 
+def _expression_groups(values: pd.DataFrame, facet: str) -> list[tuple[str, str, float]]:
+    """Các nhóm (mức facet, lớp) CÓ mẫu, kèm vị trí trên trục ngang; giữa hai mức facet chừa một khoảng."""
+    groups, x = [], 0.0
+    for level in [f for f in FACET_ORDER[facet] if f in set(values[facet])]:
+        present = [c for c in CLASS_ORDER if (values[facet].eq(level) & values["class"].eq(c)).any()]
+        for cls in present:
+            groups.append((level, cls, x))
+            x += 1.0
+        x += GROUP_GAP
+    return groups
+
+
+def _swarm_offsets(y: np.ndarray, y_span: float, step: float, half_width: float) -> np.ndarray:
+    """Độ lệch ngang kiểu beeswarm, không ngẫu nhiên: điểm có giá trị gần nhau được xếp sang hai bên.
+
+    Chia trục dọc thành ô cao y_span/25; trong mỗi ô, điểm thứ k lệch 0, +step, −step, +2·step, ...
+    Ô quá đông thì co lại cho vừa half_width, nên 20 mẫu ở mức sàn vẫn thấy rõ là 20 chấm.
+    """
+    y = np.asarray(y, dtype=float)
+    out = np.zeros(len(y))
+    bins = np.floor((y - np.nanmin(y)) / max(y_span / 25, 1e-9)).astype(int) if len(y) else []
+    for b in np.unique(bins):
+        idx = np.where(bins == b)[0]
+        idx = idx[np.argsort(y[idx], kind="stable")]
+        k = np.arange(len(idx))
+        off = np.ceil(k / 2) * np.where(k % 2 == 1, 1, -1) * step
+        widest = np.abs(off).max() if len(off) else 0
+        out[idx] = off * (half_width / widest) if widest > half_width else off
+    return out
+
+
 @styled
 def plot_gene_expression(values: pd.DataFrame, facet: str = "source", title: str | None = None,
+                         ylabel: str = "Biểu hiện (log10)", ref_line: tuple[float, str] | None = None,
                          mode: str = "report") -> plt.Figure:
-    """Biểu hiện một gen theo lớp, mỗi ô một phòng lab (hoặc loại mô).
+    """Biểu hiện một gen theo lớp và phòng lab (hoặc loại mô), trên một trục chung.
 
-    Chấm đặc: huấn luyện; chấm rỗng: kiểm tra; vòng đen: mẫu gắn cờ chất lượng; vạch đen: trung vị.
-    Ô có cả hai lớp được tô nền nhạt: chỉ ở đó mới so được ALL với AML trong cùng một phòng lab.
+    Chỉ vẽ nhóm có mẫu (DFCI chỉ có ALL thì chỉ có một cột). Chấm xếp kiểu beeswarm để thấy đủ số mẫu,
+    kể cả khi nhiều mẫu trùng ở mức sàn. Màu và hình theo lớp; chấm đặc: huấn luyện; chấm rỗng: kiểm tra;
+    vòng đen: mẫu gắn cờ chất lượng; vạch đen ngang: trung vị; nét đứt: mức sàn của chip (log10 = 2).
+    Vùng nền xám: mức facet có cả hai lớp, nơi duy nhất so được ALL với AML trong cùng một phòng lab.
     """
     if facet not in FACET_ORDER:
         raise ValueError(f"facet phải là một trong {tuple(FACET_ORDER)}")
-    order = [f for f in FACET_ORDER[facet] if f in set(values[facet])]
     qc = values["qc_outlier"].fillna(False).astype(bool) if "qc_outlier" in values else pd.Series(False, values.index)
-    rng = np.random.default_rng(0)
-    fig, axes = plt.subplots(1, len(order), figsize=figsize(mode, 0.55), sharey=True, squeeze=False)
-    for ax, level in zip(axes[0], order):
-        sub = values[values[facet].eq(level)]
-        both = sub["class"].nunique() == 2
+    groups = _expression_groups(values, facet)
+    y_all = values["value"].to_numpy(dtype=float)
+    y_span = float(np.nanmax(y_all) - np.nanmin(y_all)) or 1.0
+    width = 0.44
+    # Rộng tối đa theo style guide; tăng chiều cao để giãn trục dọc (slide giữ thấp hơn cho vừa khung 16:9)
+    fig, ax = plt.subplots(figsize=figsize(mode, 0.85 if mode == "report" else 0.62))
+
+    for level in dict.fromkeys(g[0] for g in groups):
+        xs = [g[2] for g in groups if g[0] == level]
+        both = len(xs) == 2 and facet == "source"      # theo loại mô thì ô nào cũng đủ 2 lớp, tô nền vô nghĩa
         if both:
-            ax.set_facecolor("#F2F2F2")
-        for i, cls in enumerate(CLASS_ORDER):
-            s = sub[sub["class"].eq(cls)]
-            if s.empty:
-                continue
-            xs = i + rng.uniform(-0.18, 0.18, len(s))
-            train = s["split"].eq("train").to_numpy()
-            color = CLASS_COLORS[cls]
-            ax.scatter(xs[train], s["value"][train], s=_ms(mode), marker=CLASS_MARKERS[cls], color=color,
-                       edgecolors=color, lw=1)
-            ax.scatter(xs[~train], s["value"][~train], s=_ms(mode), marker=CLASS_MARKERS[cls],
-                       facecolors="white", edgecolors=color, lw=1.4)
-            flagged = qc.loc[s.index].to_numpy()
-            if flagged.any():
-                ax.scatter(xs[flagged], s["value"][flagged], s=_ms(mode) * 3.2, facecolors="none",
-                           edgecolors="black", lw=1.8)
-            ax.hlines(s["value"].median(), i - 0.3, i + 0.3, color="black", lw=2.2)
-        ax.set_xticks([0, 1])
-        counts = sub["class"].value_counts()
-        ax.set_xticklabels([f"{c}\nn={counts.get(c, 0)}" for c in CLASS_ORDER])
-        ax.set_xlim(-0.6, 1.6)
-        ax.set_title(level + (" (đủ 2 lớp)" if both and facet == "source" else ""),
-                     fontweight="bold" if both else "normal")
-    axes[0][0].set_ylabel("Biểu hiện (log10)")
-    handles = [Line2D([], [], ls="", marker="o", color=NEUTRAL, label="Huấn luyện"),
-               Line2D([], [], ls="", marker="o", markerfacecolor="white", markeredgecolor=NEUTRAL,
-                      label="Kiểm tra")]
+            ax.axvspan(min(xs) - 0.5, max(xs) + 0.5, color=SHADE, zorder=0, lw=0)
+        ax.text((min(xs) + max(xs)) / 2, 1.02, level + (" · đủ 2 lớp" if both else ""),
+                transform=ax.get_xaxis_transform(), ha="center", va="bottom",
+                fontweight="bold" if both else "normal")
+
+    for level, cls, x0 in groups:
+        s = values[values[facet].eq(level) & values["class"].eq(cls)]
+        y = s["value"].to_numpy(dtype=float)
+        xs = x0 + _swarm_offsets(y, y_span, step=0.1, half_width=width)
+        train = s["split"].eq("train").to_numpy()
+        color, marker = CLASS_COLORS[cls], CLASS_MARKERS[cls]
+        ax.scatter(xs[train], y[train], s=_ms(mode), marker=marker, color=color, edgecolors=color, lw=1, zorder=3)
+        ax.scatter(xs[~train], y[~train], s=_ms(mode), marker=marker, facecolors="white", edgecolors=color,
+                   lw=1.4, zorder=3)
+        flagged = qc.loc[s.index].to_numpy()
+        if flagged.any():
+            ax.scatter(xs[flagged], y[flagged], s=_ms(mode) * 3.2, facecolors="none", edgecolors="black",
+                       lw=1.8, zorder=4)
+        ax.hlines(np.median(y), x0 - width - 0.08, x0 + width + 0.08, color="black", lw=2.2, zorder=2)
+
+    if np.nanmin(y_all) <= FLOOR_LOG10 + 0.02:
+        ax.axhline(FLOOR_LOG10, color=NEUTRAL, ls="--", lw=1, zorder=1)
+        ax.text(0.995, FLOOR_LOG10, "mức sàn của chip", transform=ax.get_yaxis_transform(), ha="right",
+                va="bottom", color=NEUTRAL, fontsize="small")    # nằm trong vùng vẽ để không tốn lề phải
+
+    if ref_line is not None:                               # ví dụ (3.16, "cao nhất ở 38 mẫu huấn luyện")
+        ax.axhline(ref_line[0], color="black", ls=":", lw=1.2, zorder=1)
+        ax.text(0.995, ref_line[0], ref_line[1], transform=ax.get_yaxis_transform(), ha="right", va="bottom",
+                fontsize="small")
+
+    ax.set_xticks([g[2] for g in groups])
+    ax.set_xticklabels([f"{cls}\nn={int((values[facet].eq(lv) & values['class'].eq(cls)).sum())}"
+                        for lv, cls, _ in groups])
+    ax.tick_params(axis="x", length=0)
+    ax.set_xlim(groups[0][2] - 0.55, groups[-1][2] + 0.55)
+    pad = 0.03 * y_span                                    # trục dọc bó sát dữ liệu, không chừa khoảng trống
+    ax.set_ylim(np.nanmin(y_all) - pad, np.nanmax(y_all) + pad)
+    ax.margins(y=0)
+    ax.set_ylabel(ylabel)
+    ax.set_title(title or "Biểu hiện của gen theo lớp", loc="left", pad=2.6 * plt.rcParams["font.size"])
+
+    handles = [Line2D([], [], ls="", marker=CLASS_MARKERS[c], color=CLASS_COLORS[c], label=c) for c in CLASS_ORDER]
+    handles += [Line2D([], [], ls="", marker="o", color=NEUTRAL, label="Huấn luyện"),
+                Line2D([], [], ls="", marker="o", markerfacecolor="white", markeredgecolor=NEUTRAL,
+                       label="Kiểm tra")]
     if qc.any():
         handles.append(Line2D([], [], ls="", marker="o", markerfacecolor="none", markeredgecolor="black",
                               markersize=11, label="Gắn cờ chất lượng"))
     handles.append(Line2D([], [], color="black", lw=2.2, label="Trung vị"))
-    fig.legend(handles=handles, loc="lower center", ncol=len(handles), frameon=False, bbox_to_anchor=(0.5, -0.06))
-    fig.suptitle(title or "Biểu hiện của gen theo lớp")
-    fig.tight_layout(rect=(0, 0.06, 1, 1))
+    fig.legend(handles=handles, loc="lower center", ncol=len(handles), frameon=False, bbox_to_anchor=(0.5, 0.0),
+               handletextpad=0.3, columnspacing=1.0)
+    fig.tight_layout(rect=(0, 0.07, 1, 1))
     return fig
 
 
@@ -380,6 +441,73 @@ def plot_consistency(consistency: pd.DataFrame, title: str | None = None, mode: 
     return fig
 
 
+SEX_STYLE = {   # không dùng màu lớp (xanh/cam) để khỏi nhầm với ALL/AML; phân biệt bằng hình và độ đặc
+    "M": dict(marker="s", facecolors=NEUTRAL, edgecolors=NEUTRAL, label="Ghi nam"),
+    "F": dict(marker="o", facecolors="white", edgecolors=NEUTRAL, label="Ghi nữ"),
+    "NA": dict(marker="D", facecolors=NEUTRAL_LIGHT, edgecolors=NEUTRAL_LIGHT, label="Không ghi"),
+}
+
+
+def _sex_frame(sex: pd.DataFrame) -> pd.DataFrame:
+    need = ("sample_id", "rps4y", "xist", "sex_recorded", "status")
+    miss = [c for c in need if c not in sex.columns]
+    if miss:
+        raise ValueError(f"cần đầu ra của ge.sex_check(); thiếu cột {miss}")
+    df = sex.copy()
+    df["recorded"] = df["sex_recorded"].astype(object).where(df["sex_recorded"].notna(), "NA")
+    return df
+
+
+@styled
+def plot_sex_check(sex: pd.DataFrame, threshold: float = 2.4, mode: str = "report") -> plt.Figure:
+    """Giới tính theo gen Y (trục ngang) và XIST (trục dọc), hình theo giới tính đã ghi.
+
+    Nét đứt dọc: ngưỡng gen Y. Mẫu lệch metadata được khoanh và ghi số mẫu. Đầu vào: ge.sex_check().
+    """
+    df = _sex_frame(sex)
+    fig, ax = plt.subplots(figsize=figsize(mode, 0.62))
+    for key, st in SEX_STYLE.items():
+        sub = df[df["recorded"].eq(key)]
+        ax.scatter(sub["rps4y"], sub["xist"], s=_ms(mode), lw=1.3, zorder=3,
+                   label=f"{st['label']} ({len(sub)})", **{k: v for k, v in st.items() if k != "label"})
+    bad = df[df["status"].eq("Lệch metadata")]
+    ax.scatter(bad["rps4y"], bad["xist"], s=_ms(mode) * 3.2, facecolors="none", edgecolors="black", lw=1.8,
+               zorder=4, label=f"Lệch metadata ({len(bad)})")
+    for _, r in bad.iterrows():
+        ax.annotate(f"mẫu {int(r['sample_id'])}", (r["rps4y"], r["xist"]), xytext=(9, 6),
+                    textcoords="offset points", fontweight="bold")
+    ax.axvline(threshold, color=NEUTRAL, ls="--", lw=1)
+    ax.text(threshold, 1.0, f" ngưỡng {threshold:g}", transform=ax.get_xaxis_transform(), ha="left", va="top",
+            color=NEUTRAL, fontsize="small")
+    ax.text(0.02, 0.02, "← nữ", transform=ax.transAxes, color=NEUTRAL)
+    ax.text(0.98, 0.02, "nam →", transform=ax.transAxes, ha="right", color=NEUTRAL)
+    ax.set_xlabel("RPS4Y, gen trên NST Y (log10)")
+    ax.set_ylabel("XIST, gen bật ở nữ (log10)")
+    ax.set_title("Giới tính suy từ gen Y khớp metadata ở hầu hết mẫu", loc="left")
+    ax.legend(frameon=False, loc="upper left", bbox_to_anchor=(1.0, 1.0))
+    fig.tight_layout()
+    return fig
+
+
+def sex_check_chart(sex: pd.DataFrame, threshold: float = 2.4) -> "alt.Chart":
+    """Bản tương tác của plot_sex_check: di chuột xem mẫu, phòng lab, giới tính ghi và suy ra."""
+    _need_altair()
+    df = _sex_frame(sex)
+    df["Ghi"] = df["recorded"].map({"M": "Nam", "F": "Nữ", "NA": "Không ghi"})
+    pts = alt.Chart(df).mark_point(size=70, strokeWidth=1.6, filled=True).encode(
+        x=alt.X("rps4y:Q", title="RPS4Y, gen trên NST Y (log10)", scale=alt.Scale(zero=False)),
+        y=alt.Y("xist:Q", title="XIST, gen bật ở nữ (log10)", scale=alt.Scale(zero=False)),
+        shape=alt.Shape("Ghi:N", scale=alt.Scale(domain=["Nam", "Nữ", "Không ghi"],
+                                                 range=["square", "circle", "diamond"])),
+        color=alt.condition("datum.status == 'Lệch metadata'", alt.value("black"), alt.value(NEUTRAL_LIGHT)),
+        tooltip=[alt.Tooltip("sample_id:N", title="Mẫu"), alt.Tooltip("source:N", title="Phòng lab"),
+                 alt.Tooltip("Ghi:N"), alt.Tooltip("sex_inferred:N", title="Suy ra"),
+                 alt.Tooltip("status:N", title="Trạng thái"), alt.Tooltip("rps4y:Q", format=".2f")])
+    rule = alt.Chart(pd.DataFrame({"x": [threshold]})).mark_rule(strokeDash=[4, 4], color=NEUTRAL).encode(x="x:Q")
+    return alt.layer(rule, pts).properties(width="container", height=320,
+                                           title="Giới tính suy từ gen Y (chấm đen: lệch metadata)")
+
+
 # ======================================================================== vẽ lại hình cho báo cáo
 
 def main() -> None:
@@ -393,12 +521,25 @@ def main() -> None:
     cd33 = "M23197_at"
     stjude = ge.marker_consistency(source="St-Jude")
     note = (f"St-Jude: gen dấu ấn có giữ chiều? ({stjude.attrs['n_ALL']} ALL, {stjude.attrs['n_AML']} AML)")
+    purity = ge.purity_check()
     for mode in ("report", "slide"):
         figs = {
             "gene_volcano": plot_volcano(ranking, highlight=cd33, mode=mode),
             "gene_expression_CD33": plot_gene_expression(ge.gene_values(cd33), facet="source",
-                                                         title="CD33 theo lớp và phòng lab", mode=mode),
+                                                         title="CD33 cao ở AML ở mọi phòng lab, kể cả trong St-Jude",
+                                                         mode=mode),
             "gene_consistency_StJude": plot_consistency(stjude, title=note, mode=mode),
+            "gene_expression_IGB": plot_gene_expression(
+                ge.gene_values("M89957_at"), facet="subtype", mode=mode,
+                title="IGB chỉ cao ở B-ALL: T-ALL nằm ở mức sàn như AML"),
+            "gene_expression_CD3D": plot_gene_expression(
+                ge.gene_values("X03934_at"), facet="subtype", mode=mode,
+                title="CD3D chỉ cao ở T-ALL: dấu ấn dòng T bị bảng xếp hạng ALL/AML bỏ qua"),
+            "gene_sex_check": plot_sex_check(ge.sex_check(), threshold=ge.SEX_Y_THRESHOLD, mode=mode),
+            "gene_purity": plot_gene_expression(
+                purity, facet="source", mode=mode, ylabel="Điểm bạch cầu hạt (log10)",
+                ref_line=(purity.attrs["train_max"], "cao nhất ở 38 mẫu huấn luyện"),
+                title="Mẫu St-Jude lẫn nhiều bạch cầu hạt bình thường hơn"),
         }
         for stem, fig in figs.items():
             print("Đã ghi", save_figure(fig, stem, mode))
